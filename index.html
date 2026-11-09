@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1b1712">
+  <title>Kolonie – budovatelská survival hra</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="topbar">
+    <div id="clock" class="panel">
+      <span id="sunIcon">☀️</span>
+      <span id="dayLabel">Den 1</span>
+      <span id="timeLabel">07:00</span>
+      <span id="weatherLabel"></span>
+    </div>
+    <div id="resources" class="panel"></div>
+    <div id="speed" class="panel"></div>
+  </div>
+
+  <div id="colonistBar"></div>
+  <div id="infoPanel" class="panel hidden"></div>
+  <div id="toasts"></div>
+  <div id="pausedBadge">PAUZA</div>
+
+  <div id="bottom">
+    <div id="toolHint" class="panel hidden"><span id="hintText"></span><button id="hintClose" class="x">✕</button></div>
+    <div id="toolRow"></div>
+    <div id="tabRow"></div>
+  </div>
+
+  <div id="modal" class="hidden"></div>
+  <div id="loading"><div>Generuji svět…</div></div>
+
+  <script src="js/utils.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/pathfinding.js"></script>
+  <script src="js/time.js"></script>
+  <script src="js/jobs.js"></script>
+  <script src="js/sprites.js"></script>
+  <script src="js/colonist.js"></script>
+  <script src="js/camera.js"></script>
+  <script src="js/tools.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
