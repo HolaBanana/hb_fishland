@@ -5,7 +5,10 @@ Veškerá pixel-art grafika (terén, stromy, kolonisté, stavby, ikony) se gener
 
 ## Spuštění
 
-Stačí otevřít `index.html` v prohlížeči (funguje i z disku, `file://`), nebo spustit
+**Nejjednodušší:** stáhni jediný soubor `kolonie.html` a otevři ho v prohlížeči (dvojklik). Obsahuje celou hru včetně stylů a skriptů.
+Po úpravách zdrojáků ho znovu sestavíš příkazem `python3 build.py`.
+
+Vývojová verze: Stačí otevřít `index.html` v prohlížeči (funguje i z disku, `file://`), nebo spustit
 libovolný statický server, např.:
 
 ```bash
