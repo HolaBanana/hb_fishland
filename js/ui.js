@@ -5,11 +5,11 @@
  */
 const UI = {
   TABS: [
-    { id: 'orders', label: 'Příkazy', icon: 'chop', tools: ['select', 'chop', 'mine', 'harvest', 'decon', 'cancel'] },
+    { id: 'orders', label: 'Příkazy', icon: 'chop', tools: ['select', 'chop', 'mine', 'harvest', 'hunt', 'decon', 'cancel'] },
     { id: 'build', label: 'Stavba', icon: 'wall_wood', tools: ['wall_wood', 'wall_stone', 'door', 'floor_wood', 'floor_stone', 'bed', 'campfire', 'table', 'chair', 'chest', 'lamp'] },
-    { id: 'prod', label: 'Výroba', icon: 'belt', tools: ['saw', 'furnace', 'research', 'belt', 'drill', 'autosaw', 'autofurnace', 'pole', 'waterwheel', 'windmill', 'boiler'],
+    { id: 'prod', label: 'Výroba', icon: 'belt', tools: ['saw', 'furnace', 'tailor', 'research', 'belt', 'drill', 'autosaw', 'autofurnace', 'pole', 'waterwheel', 'windmill', 'boiler'],
       actions: [{ icon: 'research_btn', label: 'Výzkum', run: () => UI.openResearch() }, { icon: 'power_btn', label: 'Energie', run: () => UI.openPower() }] },
-    { id: 'zones', label: 'Zóny', icon: 'zone_farm', tools: ['zone_stock', 'zone_farm', 'zone_clear'] },
+    { id: 'zones', label: 'Zóny', icon: 'zone_farm', tools: ['zone_stock', 'zone_farm', 'zone_pasture', 'coop', 'sheepfold', 'zone_clear'] },
     { id: 'work', label: 'Práce', icon: 'priorities', action: () => UI.openPriorities() },
     { id: 'menu', label: 'Menu', icon: 'menu', action: () => UI.openMenu() },
   ],
@@ -40,7 +40,7 @@ const UI = {
     for (const k of ITEM_ORDER) {
       const chip = this.el('div', 'res', `${this.imgTag(k)}<span id="res-${k}">0</span>`);
       chip.title = ITEMS[k].name;
-      if (k === 'plank' || k === 'ore' || k === 'iron') chip.classList.add('hidden');
+      if (!ITEM_BASIC.includes(k)) chip.classList.add('hidden');
       res.appendChild(chip);
     }
     const pw = this.el('div', 'res hidden', `${this.imgTag('power_btn')}<span id="res-power">0/0</span>`);
@@ -223,12 +223,14 @@ const UI = {
     if (!s) { p.classList.add('hidden'); return; }
     p.classList.remove('hidden');
     if (s.type === 'colonist') this.colonistInfo(p, s.c, force);
+    else if (s.type === 'animal') this.animalInfo(p, s.a);
     else this.tileInfo(p, s.x, s.y);
   },
   bar(label, val, color) {
     return `<div class="stat"><span>${label}</span><div class="bar"><i style="width:${U.clamp(val, 0, 100)}%;background:${color}"></i></div><b>${Math.round(val)}</b></div>`;
   },
   colonistInfo(p, c, force) {
+    p.onpointerdown = null;
     if (force || p.dataset.kind !== 'c' + c.id) {
       p.dataset.kind = 'c' + c.id;
       p.innerHTML = `<div class="phead"><img class="pix portrait" src="${Sprites.toURL(c.portrait, 4)}" alt="">
@@ -243,12 +245,13 @@ const UI = {
       this.$('pFollow').onclick = () => { Camera.follow = Camera.follow === c ? null : c; };
       this.$('pPrio').onclick = () => this.openPriorities();
     }
-    this.$('pAct').textContent = (c.carry ? `[${ITEMS[c.carry.type].name} ×${c.carry.n}] ` : '') + c.activity;
+    this.$('pAct').textContent = (c.carry ? `[${ITEMS[c.carry.type].name} ×${c.carry.n}] ` : '') + c.activity + (c.coat || c.bow ? ' · výbava: ' + [c.coat && 'oblečení', c.bow && 'kuše'].filter(Boolean).join(', ') : '');
     this.$('pFollow').textContent = Camera.follow === c ? 'Nesledovat' : 'Sledovat';
     this.$('pNeeds').innerHTML =
       this.bar('Zdraví', c.health, c.health < 40 ? '#e5534b' : '#d9534f') +
       this.bar('Sytost', c.hunger, '#e3a23b') +
       this.bar('Energie', c.energy, '#58a6ff') +
+      (c.warmth < 99 ? this.bar('Teplo', c.warmth, '#ff8a4c') : '') +
       this.bar('Nálada', c.mood, this.moodColor(c.mood)) +
       `<div class="moodl">${this.moodLabel(c.mood)}</div>`;
     let sk = '';
@@ -260,6 +263,23 @@ const UI = {
     this.$('pSkills').innerHTML = sk;
     this.$('pThoughts').innerHTML = c.moodFactors().map(f =>
       `<div class="th ${f.val >= 0 ? 'pos' : 'neg'}"><span>${f.label}</span><b>${f.val > 0 ? '+' : ''}${f.val}</b></div>`).join('');
+  },
+  animalInfo(p, a) {
+    if (a.gone) { Game.select(null); return; }
+    const d = a.def, key = 'a' + a.id + ':' + a.hunt + ':' + (Game.tickCount / 30 | 0);
+    if (p.dataset.kind === key) return;
+    p.dataset.kind = key;
+    const rows = [['Druh', d.wild ? 'divoká zvěř' : 'hospodářské zvíře'], ['Zdraví', `${Math.max(0, Math.round(a.hp))} / ${d.hp}`], ['Dá', `${d.meat} masa` + (d.leather ? `, ${d.leather} kůže` : '')]];
+    if (d.eggHours) rows.push(['Snáška', Math.round(a.prod * 100) + ' %']);
+    if (d.woolHours) rows.push(['Vlna', a.prod >= 1 ? 'připravena ke stříhání' : Math.round(a.prod * 100) + ' %']);
+    if (!d.wild) rows.push(['Pastvina', a.home < 0 ? 'bez domova' : `${Animals.pastureTiles(a.home)} políček pro ${Animals.herd(a.home).length} ks` + (TimeSys.season === 3 ? ' – v zimě je produkce poloviční' : Animals.feed(a.home) < 1 ? ' – málo, produkce je nižší' : '')]);
+    p.innerHTML = `<div class="phead"><div><div class="ptitle">${d.name}</div></div><button class="x" id="infoClose">✕</button></div>
+      <table class="ttab">${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>
+      <div class="pbtns"><button data-act="hunt">${a.hunt ? 'Zrušit ' + (d.wild ? 'lov' : 'porážku') : (d.wild ? 'Ulovit' : 'Porazit')}</button></div>`;
+    this.$('infoClose').onclick = () => Game.select(null);
+    p.onpointerdown = (e) => {
+      if (e.target.closest && e.target.closest('[data-act="hunt"]')) { a.hunt = !a.hunt; p.dataset.kind = ''; this.animalInfo(p, a); }
+    };
   },
   tileInfo(p, x, y) {
     // panel s filtrem se nepřekresluje při každé aktualizaci (klepnutí by se ztrácela)
@@ -318,7 +338,7 @@ const UI = {
       const fr = World.freshness(i);
       rows.push(['Předmět', `${ITEMS[it.type].name} ×${it.n}` + (fr >= 0 ? ` – čerstvost ${Math.round(fr * 100)} %` : '')]);
     }
-    if (World.zone[i]) rows.push(['Zóna', World.zone[i] === 1 ? 'Sklad' : 'Pole']);
+    if (World.zone[i]) rows.push(['Zóna', ['', 'Sklad', 'Pole', 'Pastvina'][World.zone[i]]]);
     const room = World.roomAt(i);
     if (room) rows.push(['Místnost', `pod střechou, ${room.tiles.length} políček` + (room.beds.length === 1 ? ', ložnice' : '') + (room.heat ? ', vytápěná' : '')]);
     else if (World.isRoofed(i)) rows.push(['Střecha', 'ano']);

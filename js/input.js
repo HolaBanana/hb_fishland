@@ -138,7 +138,13 @@ const Input = {
       const d = Math.hypot(w.x / Config.TILE - c.x, w.y / Config.TILE - (c.y - 0.35));
       if (d < bd) { bd = d; best = c; }
     }
+    let an = null, ad = 0.8;
+    for (const a of Animals.list) {
+      const d = Math.hypot(w.x / Config.TILE - a.x, w.y / Config.TILE - (a.y - 0.2));
+      if (d < ad) { ad = d; an = a; }
+    }
     if (best) Game.select({ type: 'colonist', c: best });
+    else if (an) Game.select({ type: 'animal', a: an });
     else if (World.inb(t.x, t.y)) Game.select({ type: 'tile', x: t.x, y: t.y });
     else Game.select(null);
   },

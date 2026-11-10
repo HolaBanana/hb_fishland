@@ -36,7 +36,8 @@ const Jobs = (() => {
   }
   /** Je někde volný (nerezervovaný) kus dané suroviny? O(1) díky průběžným počtům. */
   function anyItem(type) { return World.counts[type] - Game.resType[type] > 0; }
-  function hasFood() { return anyItem('meal') || anyItem('food'); }
+  function hasFood() { return anyItem('meal') || anyItem('food') || anyItem('egg'); }
+  function anyCookable() { return COOKABLE.some(anyItem); }
 
   function findStockDest(type, c) {
     let best = -1, bs = Infinity;
@@ -67,7 +68,7 @@ const Jobs = (() => {
   function findFood(c) {
     if (!hasFood()) return -1;
     let i = anyItem('meal') ? nearestItem(['meal'], c) : -1;
-    if (i < 0) i = nearestItem(['food'], c);
+    if (i < 0) i = nearestItem(['food', 'egg'], c);
     return i;
   }
   function findBed(c) {
@@ -122,7 +123,7 @@ const Jobs = (() => {
   // Vycházejí z průběžně udržovaných seznamů ve World (žádné procházení celé mapy).
   const candidates = {
     cook() {
-      if (World.counts.meal >= Game.colonists.length * 4 || !anyItem('food')) return [];
+      if (World.counts.meal >= Game.colonists.length * 4 || !anyCookable()) return [];
       const out = [];
       const fires = World.structBy.campfire;
       if (fires) for (const i of fires) if (!World.struct[i].decon) out.push({ type: 'cook', i, key: 'o' + i });
@@ -148,6 +149,15 @@ const Jobs = (() => {
         const o = World.obj[i];
         if (o && o.berries) out.push({ type: 'pick', i, key: 'o' + i });
       }
+      // stříhání ovcí
+      for (const a of Animals.list) {
+        if (a.type === 'sheep' && a.prod >= 1 && !a.hunt) out.push({ type: 'shear', a: a.id, i: World.idx(a.tx, a.ty), key: 'a' + a.id });
+      }
+      return out;
+    },
+    hunt() {
+      const out = [];
+      for (const a of Animals.list) if (a.hunt && !a.gone) out.push({ type: 'hunt', a: a.id, i: World.idx(a.tx, a.ty), key: 'a' + a.id });
       return out;
     },
     craft() {
@@ -155,11 +165,15 @@ const Jobs = (() => {
       for (const i of World.machines) {
         const s = World.struct[i], m = BUILD[s.type].machine;
         if (!m.manual || !m.recipe || s.decon) continue;
-        const outType = Object.keys(m.recipe.out)[0];
-        if (World.counts[outType] >= s.target) continue;
-        let ok = true;
-        for (const k in m.recipe.in) if ((s.inv[k] || 0) < m.recipe.in[k] && !anyItem(k)) { ok = false; break; }
-        if (ok) out.push({ type: 'craft', i, key: 'o' + i });
+        const rs = Machines.recipes(m);
+        for (let ri = 0; ri < rs.length; ri++) {
+          const r = rs[ri];
+          const outType = Object.keys(r.out)[0];
+          if (World.counts[outType] >= (r.target !== undefined ? r.target : s.target)) continue;
+          let ok = true;
+          for (const k in r.in) if ((s.inv[k] || 0) < r.in[k] && !anyItem(k)) { ok = false; break; }
+          if (ok) { out.push({ type: 'craft', i, ri, key: 'o' + i }); break; }
+        }
       }
       return out;
     },
@@ -348,6 +362,7 @@ const Jobs = (() => {
           World.completeBlueprint(i);
           Game.onTileChanged(bx, by);
           Game.stats.built++;
+          if (World.struct[i]) Animals.onBuilt(World.struct[i]);
           return DONE;
         }
       }
@@ -360,8 +375,9 @@ const Jobs = (() => {
     craft(c, j) {
       const s = World.struct[j.i];
       if (!s || s.decon || !BUILD[s.type].machine) return FAIL;
-      const r = BUILD[s.type].machine.recipe, x = ix(j.i), y = iy(j.i);
+      const r = Machines.recipes(BUILD[s.type].machine)[j.ri || 0], x = ix(j.i), y = iy(j.i);
       const outType = Object.keys(r.out)[0];
+      const target = r.target !== undefined ? r.target : s.target;
       if (j.stage === 0) {
         let miss = null;
         for (const k in r.in) if ((s.inv[k] || 0) < r.in[k]) { miss = k; break; }
@@ -407,7 +423,7 @@ const Jobs = (() => {
         j.stage = 4; j.made = 0;
       }
       if (j.stage === 4) {
-        if (!Machines.canCraft(s)) return j.made ? DONE : FAIL;
+        if (!Machines.hasInputs(s, r)) return j.made ? DONE : FAIL;
         c.activity = 'Vyrábí: ' + ITEMS[outType].name.toLowerCase();
         c.face(x, y);
         j.progress += c.work('craft');
@@ -420,9 +436,82 @@ const Jobs = (() => {
           for (const k in out) World.dropItem(c.tx, c.ty, k, out[k]);
           Game.stats.crafted++;
           j.progress = 0;
-          if (++j.made >= 8 || World.counts[outType] >= s.target) return DONE;
+          if (++j.made >= 8 || World.counts[outType] >= target) return DONE;
         }
       }
+    },
+
+    /** Lov a porážka: přiblížit se na dostřel, mířit, vystřelit (hodit oštěp). */
+    hunt(c, j) {
+      const a = Animals.byId(j.a);
+      if (!a || a.gone || !a.hunt) return DONE;
+      j.t = (j.t || 0) + 1;
+      if (j.t > 2600) return FAIL;
+      const d = Math.hypot(a.x - c.x, a.y - c.y);
+      const range = c.bow ? 7 : 5;
+      if (d > range) {
+        c.activity = 'Stopuje zvěř: ' + a.def.name.toLowerCase();
+        if (!c.path || (j.t % 40) === 0) {
+          if (!c.pathTo(a.tx, a.ty, 1)) { c.unreach.set(j.key, TimeSys.minutes + 60); return FAIL; }
+        }
+        c.followPath();
+        j.progress = 0;
+        return;
+      }
+      c.path = null;
+      c.activity = (a.def.wild ? 'Loví: ' : 'Poráží: ') + a.def.name.toLowerCase();
+      c.face(a.tx, a.ty);
+      j.progress += c.work('hunt');
+      c.workFrac = j.progress / 60;
+      if (j.progress >= 60) {
+        j.progress = 0;
+        Game.shot(c.x, c.y - 0.4, a.x, a.y, c.bow ? '#e8e2d0' : '#b98a56');
+        const hit = !a.def.wild || U.chance((c.bow ? 0.6 : 0.42) + c.skills.hunt.lvl * 0.03);
+        if (hit) {
+          a.hp -= c.bow ? 24 : 15;
+          if (a.hp <= 0 || !a.def.wild) { Animals.kill(a); return DONE; }
+        }
+        if (a.def.wild) a.flee(c, false);
+      }
+    },
+
+    /** Stříhání ovce. */
+    shear(c, j) {
+      const a = Animals.byId(j.a);
+      if (!a || a.gone || a.prod < 1) return DONE;
+      j.t = (j.t || 0) + 1;
+      if (j.t > 2000) return FAIL;
+      if (Math.hypot(a.x - c.x, a.y - c.y) > 1.6) {
+        c.activity = 'Jde stříhat ovci';
+        if (!c.path || (j.t % 40) === 0) { if (!c.pathTo(a.tx, a.ty, 1)) return FAIL; }
+        c.followPath();
+        return;
+      }
+      c.path = null;
+      a.timer = 60; a.path = null;      // ovce chvíli postojí
+      c.activity = 'Stříhá ovci';
+      c.face(a.tx, a.ty);
+      j.progress += c.work('grow');
+      c.workFrac = j.progress / 70;
+      if (j.progress >= 70) {
+        a.prod = 0;
+        World.dropItem(c.tx, c.ty, 'wool', a.def.wool);
+        return DONE;
+      }
+    },
+
+    /** Vzít si výbavu (teplé oblečení, kuši). */
+    equip(c, j) {
+      const it = World.items[j.i];
+      if (!it || it.type !== j.item || c[j.item]) return FAIL;
+      c.activity = 'Jde si pro: ' + ITEMS[j.item].name.toLowerCase();
+      const r = walk(c, j, ix(j.i), iy(j.i), 0, 'i' + j.i);
+      if (r === 'fail') return FAIL;
+      if (r === 'moving') return;
+      if (!c.pickup(j.i, 1, j.item)) return FAIL;
+      c.carry = null;
+      c[j.item] = true;
+      return DONE;
     },
 
     /** Výzkum u výzkumného stolu. */
@@ -515,13 +604,15 @@ const Jobs = (() => {
       if (!s || s.type !== 'campfire' || s.decon) return FAIL;
       const x = ix(i), y = iy(i);
       if (j.stage === 0) {
-        if (c.carry && c.carry.type === 'food') { j.stage = 2; }
+        if (c.carry && COOKABLE.includes(c.carry.type)) { j.mat = c.carry.type; j.stage = 2; }
         else {
-          const src = nearestItem(['food'], c);
+          // maso a vejce se kazí nejrychleji → vařit je přednostně
+          let src = nearestItem(['meat'], c);
+          if (src < 0) src = nearestItem(['egg', 'food'], c);
           if (src < 0) return FAIL;
           const amt = Math.min(Game.availItem(src), 4);
           Game.reserveItem(src, amt, c);
-          j.src = src; j.amt = amt; j.stage = 1;
+          j.src = src; j.amt = amt; j.mat = World.items[src].type; j.stage = 1;
         }
       }
       if (j.stage === 1) {
@@ -529,7 +620,7 @@ const Jobs = (() => {
         const r = walk(c, j, ix(j.src), iy(j.src), 0);
         if (r === 'fail') { c.unreach.set('i' + j.src, TimeSys.minutes + 60); return FAIL; }
         if (r === 'moving') return;
-        if (!c.pickup(j.src, j.amt, 'food')) return FAIL;
+        if (!c.pickup(j.src, j.amt, j.mat)) return FAIL;
         j.stage = 2;
       }
       if (j.stage === 2) {
@@ -540,7 +631,7 @@ const Jobs = (() => {
         j.stage = 3; j.made = 0;
       }
       if (j.stage === 3) {
-        if (!c.carry || c.carry.type !== 'food') return FAIL;
+        if (!c.carry || c.carry.type !== j.mat) return FAIL;
         c.activity = 'Vaří jídlo';
         c.face(x, y);
         j.progress += c.work('cook');
@@ -599,7 +690,7 @@ const Jobs = (() => {
     eat(c, j) {
       if (j.stage === 0) {
         const it = World.items[j.i];
-        if (!it || (it.type !== 'meal' && it.type !== 'food')) return FAIL;
+        if (!it || (it.type !== 'meal' && it.type !== 'food' && it.type !== 'egg')) return FAIL;
         c.activity = 'Jde se najíst';
         const r = walk(c, j, ix(j.i), iy(j.i), 0, 'i' + j.i);
         if (r === 'fail') return FAIL;

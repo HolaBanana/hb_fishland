@@ -20,7 +20,7 @@ const Config = {
   AUTO_FAST_SPEED: 10,     // rychlost, když všichni spí (volitelné)
   BATCH_RADIUS: 8,
   SEASON_DAYS: 4,          // délka ročního období ve dnech (rok = 16 dní)
-  SPOIL_HOURS: { food: 72, meal: 120 },   // trvanlivost potravin venku (herní hodiny)
+  SPOIL_HOURS: { food: 72, meal: 120, meat: 48, egg: 96 },   // trvanlivost potravin venku (herní hodiny)
   CHEST_STACK: 300,        // kapacita truhly
   ROOM_MAX: 300,           // největší prostor, který se ještě zastřeší
   MAX_COLONISTS: 8,
@@ -57,8 +57,19 @@ const ITEMS = {
   // nové suroviny přidávej na konec – pořadí určuje bity filtru skladu v uložených hrách
   plank: { name: 'Prkna' },
   ore:   { name: 'Železná ruda' },
+  meat:  { name: 'Maso', desc: 'syrové – uvař ho' },
+  egg:   { name: 'Vejce' },
+  wool:  { name: 'Vlna' },
+  leather: { name: 'Kůže' },
+  coat:  { name: 'Teplé oblečení' },
+  bow:   { name: 'Kuše' },
+  ammo:  { name: 'Munice' },
 };
-const ITEM_ORDER = ['wood', 'plank', 'stone', 'ore', 'iron', 'food', 'meal'];
+const ITEM_ORDER = ['wood', 'plank', 'stone', 'ore', 'iron', 'food', 'meal', 'meat', 'egg', 'wool', 'leather', 'coat', 'bow', 'ammo'];
+const ITEM_BASIC = ['wood', 'stone', 'food', 'meal'];   // v liště vidět vždy; ostatní až po prvním získání
+const COOKABLE = ['food', 'meat', 'egg'];               // z čeho se vaří jídlo
+// orientační hodnota surovin (obchod, bohatství kolonie)
+const VALUE = { wood: 1, stone: 1.5, plank: 2.5, ore: 2, iron: 6, food: 1.2, meal: 2.5, meat: 2, egg: 1.5, wool: 3, leather: 3, coat: 16, bow: 20, ammo: 0.6 };
 const ITEM_KEYS = Object.keys(ITEMS);
 const ITEM_BIT = {};
 ITEM_KEYS.forEach((k, n) => { ITEM_BIT[k] = 1 << n; });
@@ -97,6 +108,18 @@ const BUILD = {
               hint: 'Dílna: taví 2 rudy na 1 železný plát, jako palivo spálí 1 dřevo.' },
   research: { name: 'Výzkumný stůl',   layer: 'struct', cost: { wood: 30, stone: 10 }, work: 140, blocks: true, burns: true, size: [2, 1], rot: true, mode: 'single',
               hint: 'Kolonista u něj bádá (práce Výzkum). Co zkoumat, vybereš ve Výroba → Výzkum.' },
+
+  tailor:   { name: 'Krejčovský stůl', layer: 'struct', cost: { plank: 15, wood: 10 }, work: 130, blocks: true, burns: true, mode: 'single',
+              machine: { manual: true, recipe: { in: { wool: 3 }, out: { coat: 1 }, work: 160 }, alts: [{ in: { leather: 3 }, out: { coat: 1 }, work: 160 }], target: 4 },
+              hint: 'Šije teplé oblečení z vlny nebo kůže. Bez něj kolonisté v zimě venku prochladnou.' },
+
+  // ----- chov -----
+  coop:     { name: 'Kurník',          layer: 'struct', cost: { plank: 8, wood: 10 }, work: 110, blocks: true, burns: true, mode: 'single',
+              livestock: { type: 'chicken', start: 3, cap: 8 },
+              hint: 'Přivede 3 slepice. Snášejí vejce a množí se; potřebují zónu Pastvina kolem kurníku.' },
+  sheepfold: { name: 'Ovčín',          layer: 'struct', cost: { plank: 12, wood: 15 }, work: 140, blocks: true, burns: true, mode: 'single',
+              livestock: { type: 'sheep', start: 2, cap: 6 },
+              hint: 'Přivede 2 ovce. Dávají vlnu (stříhá ji farmář); potřebují zónu Pastvina kolem ovčína.' },
 
   // ----- logistika a stroje -----
   belt:     { name: 'Dopravní pás',    layer: 'struct', cost: { iron: 1 }, work: 20, rot: true, mode: 'line', tech: 'belts',
@@ -148,12 +171,21 @@ const WORK_TYPES = [
   { id: 'build', name: 'Stavba',    short: 'Stav.', skill: 'build' },
   { id: 'grow',  name: 'Farmaření', short: 'Farm.', skill: 'grow' },
   { id: 'craft', name: 'Řemeslo',   short: 'Řem.',  skill: 'craft' },
+  { id: 'hunt',  name: 'Lov',       short: 'Lov',   skill: 'hunt' },
   { id: 'chop',  name: 'Kácení',    short: 'Kác.',  skill: 'chop' },
   { id: 'mine',  name: 'Těžba',     short: 'Těž.',  skill: 'mine' },
   { id: 'research', name: 'Výzkum', short: 'Výz.',  skill: 'research' },
   { id: 'haul',  name: 'Nošení',    short: 'Noš.',  skill: null },
 ];
-const SKILLS = { build: 'Stavba', chop: 'Dřevorubectví', mine: 'Těžba', grow: 'Farmaření', cook: 'Vaření', craft: 'Řemeslo', research: 'Výzkum' };
+const SKILLS = { build: 'Stavba', chop: 'Dřevorubectví', mine: 'Těžba', grow: 'Farmaření', cook: 'Vaření', craft: 'Řemeslo', research: 'Výzkum', hunt: 'Lov' };
+
+// Zvěř a hospodářská zvířata
+const ANIMALS = {
+  deer:    { name: 'Jelen',   wild: true, hp: 30, speed: 0.11, meat: 8, leather: 2, shy: 4 },
+  boar:    { name: 'Divočák', wild: true, hp: 40, speed: 0.09, meat: 6, leather: 1, shy: 3 },
+  chicken: { name: 'Slepice', hp: 6,  speed: 0.04, meat: 2, leather: 0, eggHours: 9 },
+  sheep:   { name: 'Ovce',    hp: 25, speed: 0.04, meat: 6, leather: 2, woolHours: 34, wool: 3 },
+};
 
 const TRAITS = [
   { id: 'optimist', name: 'Optimista',    desc: '+8 nálada', mood: 8 },

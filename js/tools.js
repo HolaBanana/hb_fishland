@@ -86,8 +86,23 @@ const Tools = (() => {
       apply: zoneTool(2),
       after: () => World.rebuildZones(),
     },
+    zone_pasture: {
+      name: 'Pastvina', mode: 'rect', hint: 'Táhni kolem kurníku nebo ovčína. Zvířata se drží na pastvině; počítej 3 políčka na kus.',
+      valid: i => World.zone[i] !== 3 && notBlockedTerrain(i) && !World.struct[i] && !(World.obj[i] && OBJECTS[World.obj[i].type].blocks),
+      apply: zoneTool(3),
+      after: () => World.rebuildZones(),
+    },
+    hunt: {
+      name: 'Lovit', mode: 'rect', hint: 'Táhni přes zvěř (nebo vlastní zvířata k porážce). Jednotlivý kus označíš i klepnutím na něj nástrojem Výběr.',
+      valid: i => Animals.at(i % World.w, (i / World.w) | 0).some(a => !a.hunt),
+      apply: i => {
+        const marked = Animals.at(i % World.w, (i / World.w) | 0).filter(a => !a.hunt);
+        for (const a of marked) a.hunt = true;
+        return () => { for (const a of marked) a.hunt = false; };
+      },
+    },
     zone_clear: {
-      name: 'Smazat zónu', mode: 'rect', hint: 'Táhni pro odstranění skladu nebo pole.',
+      name: 'Smazat zónu', mode: 'rect', hint: 'Táhni pro odstranění skladu, pole nebo pastviny.',
       valid: i => World.zone[i] !== 0,
       apply: zoneTool(0),
       after: () => World.rebuildZones(),

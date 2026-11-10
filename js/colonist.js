@@ -31,6 +31,9 @@ class Colonist {
     this.energy = U.range(75, 95);
     this.health = 100;
     this.dead = false;
+    this.warmth = 100;       // tělesné teplo 0..100
+    this.coat = false;       // má teplé oblečení
+    this.bow = false;        // má kuši
     this.mood = 60;
     this.moodTarget = 60;
     this.thoughts = [];
@@ -95,9 +98,10 @@ class Colonist {
     const temp = World.tempAt(here);
     if (this.health < 40) out.push({ label: 'Podlomené zdraví', val: -8 });
     if (Weather.rain > 0.3 && !roofed) out.push({ label: temp < 0 ? 'Sněží mu/jí za krk' : 'Moknutí v dešti', val: -4 });
-    if (temp < -2) out.push({ label: 'Mrzne', val: -8 });
-    else if (temp < 6) out.push({ label: 'Je mu/jí zima', val: -4 });
-    else if (roofed && TimeSys.temp() < 6) out.push({ label: 'Teplo domova', val: 3 });
+    if (this.warmth < 20) out.push({ label: 'Podchlazení', val: -12 });
+    else if (this.warmth < 55) out.push({ label: 'Prochladl/a', val: -6 });
+    else if (roofed && TimeSys.temp() < 6 && temp > 8) out.push({ label: 'Teplo domova', val: 3 });
+    if (this.coat && TimeSys.temp() < 4) out.push({ label: 'Teplé oblečení', val: 2 });
     if (World.floor[here]) out.push({ label: 'Pěkné prostředí', val: 2 });
     if (TimeSys.daylight() < 0.4 && Game.nearLight(this.tx, this.ty)) out.push({ label: 'Teplo a světlo ohně', val: 3 });
     if (Weather.cur === 'clear' && TimeSys.daylight() > 0.8) out.push({ label: 'Krásný den', val: 2 });
@@ -121,6 +125,12 @@ class Colonist {
   /** Dlouhé hladovění a vyčerpání ubírají zdraví; sytý a odpočatý kolonista se léčí. */
   updateHealth(hours) {
     let d = 0, cause = '';
+    // tělesné teplo: bez teplého oblečení venku v mrazu ubývá, v teple se vrací
+    const amb = World.tempAt(World.idx(this.tx, this.ty));
+    const comfort = this.coat ? -14 : 3;
+    if (amb < comfort) this.warmth = Math.max(0, this.warmth - (comfort - amb) * 0.9 * hours);
+    else this.warmth = Math.min(100, this.warmth + (6 + (amb - comfort)) * 1.2 * hours);
+    if (this.warmth < 20) { d -= 3 * hours; cause = 'podchlazením'; }
     if (this.hunger <= 0) { d -= 4.5 * hours; cause = 'hladem'; }
     if (this.energy <= 0) { d -= 2 * hours; cause = cause || 'vyčerpáním'; }
     if (d === 0 && this.hunger > 30 && this.energy > 15) d = (this.sleeping ? 3 : 1.5) * hours;
@@ -210,7 +220,7 @@ class Colonist {
     this.job = job;
     job.stage = 0; job.progress = 0; job.walkKey = null;
     if (job.key) Game.reserve(job.key, this);
-    if (job.type === 'eat') Game.reserveItem(job.i, 1, this);
+    if (job.type === 'eat' || job.type === 'equip') Game.reserveItem(job.i, 1, this);
     if (job.type === 'sleep' && job.bed >= 0) Game.reserve('b' + job.bed, this);
   }
   endJob() {
@@ -238,6 +248,12 @@ class Colonist {
     if (this.energy < 25 || (night && this.energy < 92)) {
       this.startJob({ type: 'sleep', bed: Jobs.findBed(this) });
       return;
+    }
+    // výbava: teplé oblečení a kuše, pokud jsou ve skladu
+    const gear = !this.coat && Jobs.anyItem('coat') ? 'coat' : !this.bow && Jobs.anyItem('bow') ? 'bow' : null;
+    if (gear) {
+      const gi = Jobs.nearestItem([gear], this);
+      if (gi >= 0) { this.startJob({ type: 'equip', i: gi, item: gear }); return; }
     }
     const job = Jobs.findWork(this);
     if (job) { this.startJob(job); return; }

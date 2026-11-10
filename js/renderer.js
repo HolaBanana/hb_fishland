@@ -125,7 +125,7 @@ const Renderer = {
         const z = World.zone[i];
         if (z === 2) {
           if (!World.crops[i]) this.rect(wx, wy, TS, TS, 'rgba(120,200,80,0.16)');
-        }
+        } else if (z === 3) this.rect(wx, wy, TS, TS, 'rgba(200,230,140,0.13)');
         const fl = World.floor[i];
         if (fl) this.img(Sprites.build[fl.type], wx, wy, TS, TS);
         if (z === 1) this.rect(wx, wy, TS, TS, 'rgba(240,200,90,0.16)');
@@ -152,7 +152,7 @@ const Renderer = {
     for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) {
       const i = y * W + x, z = World.zone[i];
       if (!z) continue;
-      const col = z === 1 ? 'rgba(250,210,100,0.75)' : 'rgba(140,220,100,0.6)';
+      const col = z === 1 ? 'rgba(250,210,100,0.75)' : z === 2 ? 'rgba(140,220,100,0.6)' : 'rgba(230,240,170,0.6)';
       const wx = x * TS, wy = y * TS, th = 1;
       if (y === 0 || World.zone[i - W] !== z) this.rect(wx, wy, TS, th, col);
       if (y === World.h - 1 || World.zone[i + W] !== z) this.rect(wx, wy + TS - th, TS, th, col);
@@ -235,6 +235,19 @@ const Renderer = {
       const cs = byRow.get(y);
       if (cs) { cs.sort((a, b) => a.y - b.y); for (const c of cs) this.drawColonist(c); }
     }
+    // stopy výstřelů
+    if (Game.shots.length) {
+      const ctx = this.ctx;
+      ctx.lineWidth = Math.max(1, this.z * 0.6);
+      for (const s of Game.shots) {
+        ctx.strokeStyle = s.col || '#fff';
+        ctx.globalAlpha = Math.min(1, s.t / 5);
+        ctx.beginPath(); ctx.moveTo(this.X(s.x0 * TS), this.Y(s.y0 * TS)); ctx.lineTo(this.X(s.x1 * TS), this.Y(s.y1 * TS)); ctx.stroke();
+        s.t--;
+      }
+      ctx.globalAlpha = 1;
+      Game.shots = Game.shots.filter(s => s.t > 0);
+    }
     // plameny požárů
     for (const i of Fire.tiles.keys()) {
       const x = i % W, y = (i / W) | 0;
@@ -248,13 +261,21 @@ const Renderer = {
     const spr = Sprites.animals[a.type];
     if (!spr) return;
     const wx = a.x * TS, wy = a.y * TS;
+    const moving = a.path && a.pathI < a.path.length;
+    const f = moving ? Math.floor(a.animT * 4) % 2 : (a.state === 'eat' && Math.sin(this.time * 6) > 0 ? 1 : 0);
+    const im = spr[a.dir === 'right' ? 'right' : 'left'][f];
+    const w = im.width, h = im.height;
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
     ctx.beginPath();
-    ctx.ellipse(this.X(wx), this.Y(wy + 4), 6 * this.z, 2 * this.z, 0, 0, Math.PI * 2);
+    ctx.ellipse(this.X(wx), this.Y(wy + 4), w * 0.38 * this.z, 1.8 * this.z, 0, 0, Math.PI * 2);
     ctx.fill();
-    const moving = a.state !== 'eat';
-    const f = moving ? Math.floor(a.animT * 3) % 2 : (Math.sin(this.time * 6) > 0 ? 0 : 1);
-    this.img(spr[a.dir === 'right' ? 'right' : 'left'][f], wx - 8, wy - 7 + (moving ? 0 : 1), 16, 12);
+    this.img(im, wx - w / 2, wy + 5 - h, w, h);
+    if (a.hunt) this.img(Sprites.icons.hunt, wx - 4, wy - h - 4, 8, 8);
+    else if (a.type === 'sheep' && a.prod >= 1) this.rect(wx - 1, wy - h + 2, 2, 2, '#ffd35a');
+    if (Game.selected && Game.selected.a === a) {
+      ctx.strokeStyle = '#ffe36e'; ctx.lineWidth = Math.max(1.5, this.z * 0.7);
+      ctx.beginPath(); ctx.ellipse(this.X(wx), this.Y(wy + 4), (w * 0.5 + 1) * this.z, 3 * this.z, 0, 0, Math.PI * 2); ctx.stroke();
+    }
   },
 
   drawObj(o, i, x, y, wx, wy) {

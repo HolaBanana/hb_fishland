@@ -24,22 +24,21 @@ const Save = {
       const same = CODE[o.type] === base && !o.des && (o.type !== 'bush' || o.berries) && (o.type !== 'ore' || o.amount === Config.ORE_AMOUNT);
       if (!same) objSet.push([i, o]);
     }
-    const struct = [], floor = [], items = [], crops = [], bp = [], stock = [], farm = [];
+    const struct = [], floor = [], items = [], crops = [], bp = [], stock = [], farm = [], pasture = [];
     for (const i of W.structSet) {
       const s = W.struct[i];
       const row = [i, s.type, s.decon ? 1 : 0, s.owner, s.dir || 0];
       // stav stroje: zásobníky, postup, cíl výroby, hoření, opotřebení
-      if (BUILD[s.type].machine) {
-        const st = {};
-        for (const k of ['inv', 'out', 'prog', 'target', 'burn', 'wear', 'broken']) if (s[k] !== undefined) st[k] = s[k];
-        row.push(st);
-      }
+      const st = {};
+      let any = false;
+      for (const k of ['inv', 'out', 'prog', 'target', 'burn', 'wear', 'broken', 'breed', 'filter', 'unload', 'hp', 'rr']) if (s[k] !== undefined) { st[k] = s[k]; any = true; }
+      if (any) row.push(st);
       struct.push(row);
     }
     for (let i = 0; i < n; i++) {
       const f = W.floor[i];
       if (f) floor.push([i, f.type, f.decon ? 1 : 0]);
-      if (W.zone[i] === 1) stock.push(i); else if (W.zone[i] === 2) farm.push(i);
+      if (W.zone[i] === 1) stock.push(i); else if (W.zone[i] === 2) farm.push(i); else if (W.zone[i] === 3) pasture.push(i);
     }
     for (const i of W.itemSet) { const it = W.items[i]; items.push([i, it.type, it.n, +(it.age || 0).toFixed(2)]); }
     const filter = [];
@@ -60,7 +59,7 @@ const Save = {
       tick: Game.tickCount,
       speed: Game.lastSpeed,
       cam: { x: Camera.x, y: Camera.y, zoom: Camera.zoom },
-      world: { objRemoved, objSet, struct, floor, items, crops, bp, stock, farm, filter },
+      world: { objRemoved, objSet, struct, floor, items, crops, bp, stock, farm, pasture, filter },
       fire: [...Fire.tiles].map(([i, f]) => [i, +f.t.toFixed(2)]),
       animals: Animals.pack(),
       events: Events.pack(),
@@ -78,7 +77,7 @@ const Save = {
       id: c.id, gender: c.gender, first: c.first, last: c.last, look: c.look, trait: c.trait.id, age: c.age,
       x: c.x, y: c.y, dir: c.dir, skills, priorities: c.priorities,
       hunger: c.hunger, energy: c.energy, mood: c.mood, health: c.health, thoughts: c.thoughts,
-      carry: c.carry, breakUntil: c.breakUntil,
+      carry: c.carry, breakUntil: c.breakUntil, warmth: c.warmth, coat: c.coat, bow: c.bow,
     };
   },
   unpackColonist(d) {
@@ -96,6 +95,8 @@ const Save = {
     c.thoughts = d.thoughts || [];
     c.carry = d.carry || null;
     c.breakUntil = d.breakUntil || 0;
+    c.warmth = d.warmth !== undefined ? d.warmth : 100;
+    c.coat = !!d.coat; c.bow = !!d.bow;
     if (!World.canWalk(c.tx, c.ty)) { const p = World.nearestWalkable(c.tx, c.ty); c.x = p.x + 0.5; c.y = p.y + 0.5; }
     return c;
   },
@@ -118,13 +119,14 @@ const Save = {
     W.items.fill(null); W.struct.fill(null); W.floor.fill(null); W.crops.fill(null); W.bp.fill(null); W.zone.fill(0);
     for (const [i, type, decon, owner, dir, st] of w.struct) { if (BUILD[type]) W.makeStruct(i, type, dir || 0, Object.assign({ decon: !!decon, owner }, st)); }
     for (const [i, type, decon] of w.floor) W.floor[i] = { type, decon: !!decon };
-    for (const [i, type, k, age] of w.items) W.items[i] = { type, n: k, age: age || 0 };
+    for (const [i, type, k, age] of w.items) if (ITEMS[type]) W.items[i] = { type, n: k, age: age || 0 };
     W.filter.fill(0);
     for (const [i, m] of w.filter || []) W.filter[i] = m;
     for (const [i, g] of w.crops) W.crops[i] = { g };
     for (const [i, type, del, dir] of w.bp) { if (BUILD[type]) { W.placeBlueprint(i, type, dir || 0); W.bp[i].del = del || {}; } }
     for (const i of w.stock) W.zone[i] = 1;
     for (const i of w.farm) W.zone[i] = 2;
+    for (const i of w.pasture || []) W.zone[i] = 3;
     W.rebuildIndex();
 
     Game.res.clear(); Game.itemRes.clear();

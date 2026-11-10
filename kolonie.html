@@ -448,7 +448,7 @@ const Config = {
   AUTO_FAST_SPEED: 10,     // rychlost, když všichni spí (volitelné)
   BATCH_RADIUS: 8,
   SEASON_DAYS: 4,          // délka ročního období ve dnech (rok = 16 dní)
-  SPOIL_HOURS: { food: 72, meal: 120 },   // trvanlivost potravin venku (herní hodiny)
+  SPOIL_HOURS: { food: 72, meal: 120, meat: 48, egg: 96 },   // trvanlivost potravin venku (herní hodiny)
   CHEST_STACK: 300,        // kapacita truhly
   ROOM_MAX: 300,           // největší prostor, který se ještě zastřeší
   MAX_COLONISTS: 8,
@@ -485,8 +485,19 @@ const ITEMS = {
   // nové suroviny přidávej na konec – pořadí určuje bity filtru skladu v uložených hrách
   plank: { name: 'Prkna' },
   ore:   { name: 'Železná ruda' },
+  meat:  { name: 'Maso', desc: 'syrové – uvař ho' },
+  egg:   { name: 'Vejce' },
+  wool:  { name: 'Vlna' },
+  leather: { name: 'Kůže' },
+  coat:  { name: 'Teplé oblečení' },
+  bow:   { name: 'Kuše' },
+  ammo:  { name: 'Munice' },
 };
-const ITEM_ORDER = ['wood', 'plank', 'stone', 'ore', 'iron', 'food', 'meal'];
+const ITEM_ORDER = ['wood', 'plank', 'stone', 'ore', 'iron', 'food', 'meal', 'meat', 'egg', 'wool', 'leather', 'coat', 'bow', 'ammo'];
+const ITEM_BASIC = ['wood', 'stone', 'food', 'meal'];   // v liště vidět vždy; ostatní až po prvním získání
+const COOKABLE = ['food', 'meat', 'egg'];               // z čeho se vaří jídlo
+// orientační hodnota surovin (obchod, bohatství kolonie)
+const VALUE = { wood: 1, stone: 1.5, plank: 2.5, ore: 2, iron: 6, food: 1.2, meal: 2.5, meat: 2, egg: 1.5, wool: 3, leather: 3, coat: 16, bow: 20, ammo: 0.6 };
 const ITEM_KEYS = Object.keys(ITEMS);
 const ITEM_BIT = {};
 ITEM_KEYS.forEach((k, n) => { ITEM_BIT[k] = 1 << n; });
@@ -525,6 +536,18 @@ const BUILD = {
               hint: 'Dílna: taví 2 rudy na 1 železný plát, jako palivo spálí 1 dřevo.' },
   research: { name: 'Výzkumný stůl',   layer: 'struct', cost: { wood: 30, stone: 10 }, work: 140, blocks: true, burns: true, size: [2, 1], rot: true, mode: 'single',
               hint: 'Kolonista u něj bádá (práce Výzkum). Co zkoumat, vybereš ve Výroba → Výzkum.' },
+
+  tailor:   { name: 'Krejčovský stůl', layer: 'struct', cost: { plank: 15, wood: 10 }, work: 130, blocks: true, burns: true, mode: 'single',
+              machine: { manual: true, recipe: { in: { wool: 3 }, out: { coat: 1 }, work: 160 }, alts: [{ in: { leather: 3 }, out: { coat: 1 }, work: 160 }], target: 4 },
+              hint: 'Šije teplé oblečení z vlny nebo kůže. Bez něj kolonisté v zimě venku prochladnou.' },
+
+  // ----- chov -----
+  coop:     { name: 'Kurník',          layer: 'struct', cost: { plank: 8, wood: 10 }, work: 110, blocks: true, burns: true, mode: 'single',
+              livestock: { type: 'chicken', start: 3, cap: 8 },
+              hint: 'Přivede 3 slepice. Snášejí vejce a množí se; potřebují zónu Pastvina kolem kurníku.' },
+  sheepfold: { name: 'Ovčín',          layer: 'struct', cost: { plank: 12, wood: 15 }, work: 140, blocks: true, burns: true, mode: 'single',
+              livestock: { type: 'sheep', start: 2, cap: 6 },
+              hint: 'Přivede 2 ovce. Dávají vlnu (stříhá ji farmář); potřebují zónu Pastvina kolem ovčína.' },
 
   // ----- logistika a stroje -----
   belt:     { name: 'Dopravní pás',    layer: 'struct', cost: { iron: 1 }, work: 20, rot: true, mode: 'line', tech: 'belts',
@@ -576,12 +599,21 @@ const WORK_TYPES = [
   { id: 'build', name: 'Stavba',    short: 'Stav.', skill: 'build' },
   { id: 'grow',  name: 'Farmaření', short: 'Farm.', skill: 'grow' },
   { id: 'craft', name: 'Řemeslo',   short: 'Řem.',  skill: 'craft' },
+  { id: 'hunt',  name: 'Lov',       short: 'Lov',   skill: 'hunt' },
   { id: 'chop',  name: 'Kácení',    short: 'Kác.',  skill: 'chop' },
   { id: 'mine',  name: 'Těžba',     short: 'Těž.',  skill: 'mine' },
   { id: 'research', name: 'Výzkum', short: 'Výz.',  skill: 'research' },
   { id: 'haul',  name: 'Nošení',    short: 'Noš.',  skill: null },
 ];
-const SKILLS = { build: 'Stavba', chop: 'Dřevorubectví', mine: 'Těžba', grow: 'Farmaření', cook: 'Vaření', craft: 'Řemeslo', research: 'Výzkum' };
+const SKILLS = { build: 'Stavba', chop: 'Dřevorubectví', mine: 'Těžba', grow: 'Farmaření', cook: 'Vaření', craft: 'Řemeslo', research: 'Výzkum', hunt: 'Lov' };
+
+// Zvěř a hospodářská zvířata
+const ANIMALS = {
+  deer:    { name: 'Jelen',   wild: true, hp: 30, speed: 0.11, meat: 8, leather: 2, shy: 4 },
+  boar:    { name: 'Divočák', wild: true, hp: 40, speed: 0.09, meat: 6, leather: 1, shy: 3 },
+  chicken: { name: 'Slepice', hp: 6,  speed: 0.04, meat: 2, leather: 0, eggHours: 9 },
+  sheep:   { name: 'Ovce',    hp: 25, speed: 0.04, meat: 6, leather: 2, woolHours: 34, wool: 3 },
+};
 
 const TRAITS = [
   { id: 'optimist', name: 'Optimista',    desc: '+8 nálada', mood: 8 },
@@ -1644,19 +1676,27 @@ const Machines = {
     const m = this.def(s);
     if (!m) return 0;
     let cap = 0;
-    if (m.recipe && m.recipe.in[type]) cap = m.recipe.in[type] * 6;
+    for (const r of this.recipes(m)) if (r.in[type]) cap = Math.max(cap, r.in[type] * 6);
+    if (cap) { /* vstup některého receptu */ }
     else if (m.fuel === type) cap = 12;
     else if (m.ammo === type) cap = 30;
     return Math.max(0, cap - (s.inv[type] || 0));
   },
-  canCraft(s) {
-    const r = this.def(s).recipe;
+  /** Všechny recepty stavby (hlavní + alternativní). */
+  recipes(m) { return m.recipe ? [m.recipe].concat(m.alts || []) : []; },
+  hasInputs(s, r) {
     for (const k in r.in) if ((s.inv[k] || 0) < r.in[k]) return false;
     return true;
   },
+  /** Recept, na který má stavba v zásobníku dost surovin (nebo null). */
+  readyRecipe(s) {
+    for (const r of this.recipes(this.def(s))) if (this.hasInputs(s, r)) return r;
+    return null;
+  },
+  canCraft(s) { return !!this.readyRecipe(s); },
   /** Dokončí jeden výrobní cyklus: spotřebuje vstupy, vrátí výstupy. */
   craft(s) {
-    const r = this.def(s).recipe;
+    const r = this.readyRecipe(s);
     for (const k in r.in) s.inv[k] -= r.in[k];
     s.prog = 0;
     return r.out;
@@ -1710,7 +1750,7 @@ const Machines = {
   /** Stroj si vezme vstupy ze sousedních políček (země, sklad, truhla, pás). */
   pull(s) {
     const m = this.def(s);
-    const want = m.recipe ? Object.keys(m.recipe.in) : m.fuel ? [m.fuel] : m.ammo ? [m.ammo] : [];
+    const want = m.recipe ? [].concat(...this.recipes(m).map(r => Object.keys(r.in))) : m.fuel ? [m.fuel] : m.ammo ? [m.ammo] : [];
     if (!want.length) return;
     for (const q of this.sides(s)) {
       const it = World.items[q];
@@ -2015,7 +2055,8 @@ const Jobs = (() => {
   }
   /** Je někde volný (nerezervovaný) kus dané suroviny? O(1) díky průběžným počtům. */
   function anyItem(type) { return World.counts[type] - Game.resType[type] > 0; }
-  function hasFood() { return anyItem('meal') || anyItem('food'); }
+  function hasFood() { return anyItem('meal') || anyItem('food') || anyItem('egg'); }
+  function anyCookable() { return COOKABLE.some(anyItem); }
 
   function findStockDest(type, c) {
     let best = -1, bs = Infinity;
@@ -2046,7 +2087,7 @@ const Jobs = (() => {
   function findFood(c) {
     if (!hasFood()) return -1;
     let i = anyItem('meal') ? nearestItem(['meal'], c) : -1;
-    if (i < 0) i = nearestItem(['food'], c);
+    if (i < 0) i = nearestItem(['food', 'egg'], c);
     return i;
   }
   function findBed(c) {
@@ -2101,7 +2142,7 @@ const Jobs = (() => {
   // Vycházejí z průběžně udržovaných seznamů ve World (žádné procházení celé mapy).
   const candidates = {
     cook() {
-      if (World.counts.meal >= Game.colonists.length * 4 || !anyItem('food')) return [];
+      if (World.counts.meal >= Game.colonists.length * 4 || !anyCookable()) return [];
       const out = [];
       const fires = World.structBy.campfire;
       if (fires) for (const i of fires) if (!World.struct[i].decon) out.push({ type: 'cook', i, key: 'o' + i });
@@ -2127,6 +2168,15 @@ const Jobs = (() => {
         const o = World.obj[i];
         if (o && o.berries) out.push({ type: 'pick', i, key: 'o' + i });
       }
+      // stříhání ovcí
+      for (const a of Animals.list) {
+        if (a.type === 'sheep' && a.prod >= 1 && !a.hunt) out.push({ type: 'shear', a: a.id, i: World.idx(a.tx, a.ty), key: 'a' + a.id });
+      }
+      return out;
+    },
+    hunt() {
+      const out = [];
+      for (const a of Animals.list) if (a.hunt && !a.gone) out.push({ type: 'hunt', a: a.id, i: World.idx(a.tx, a.ty), key: 'a' + a.id });
       return out;
     },
     craft() {
@@ -2134,11 +2184,15 @@ const Jobs = (() => {
       for (const i of World.machines) {
         const s = World.struct[i], m = BUILD[s.type].machine;
         if (!m.manual || !m.recipe || s.decon) continue;
-        const outType = Object.keys(m.recipe.out)[0];
-        if (World.counts[outType] >= s.target) continue;
-        let ok = true;
-        for (const k in m.recipe.in) if ((s.inv[k] || 0) < m.recipe.in[k] && !anyItem(k)) { ok = false; break; }
-        if (ok) out.push({ type: 'craft', i, key: 'o' + i });
+        const rs = Machines.recipes(m);
+        for (let ri = 0; ri < rs.length; ri++) {
+          const r = rs[ri];
+          const outType = Object.keys(r.out)[0];
+          if (World.counts[outType] >= (r.target !== undefined ? r.target : s.target)) continue;
+          let ok = true;
+          for (const k in r.in) if ((s.inv[k] || 0) < r.in[k] && !anyItem(k)) { ok = false; break; }
+          if (ok) { out.push({ type: 'craft', i, ri, key: 'o' + i }); break; }
+        }
       }
       return out;
     },
@@ -2327,6 +2381,7 @@ const Jobs = (() => {
           World.completeBlueprint(i);
           Game.onTileChanged(bx, by);
           Game.stats.built++;
+          if (World.struct[i]) Animals.onBuilt(World.struct[i]);
           return DONE;
         }
       }
@@ -2339,8 +2394,9 @@ const Jobs = (() => {
     craft(c, j) {
       const s = World.struct[j.i];
       if (!s || s.decon || !BUILD[s.type].machine) return FAIL;
-      const r = BUILD[s.type].machine.recipe, x = ix(j.i), y = iy(j.i);
+      const r = Machines.recipes(BUILD[s.type].machine)[j.ri || 0], x = ix(j.i), y = iy(j.i);
       const outType = Object.keys(r.out)[0];
+      const target = r.target !== undefined ? r.target : s.target;
       if (j.stage === 0) {
         let miss = null;
         for (const k in r.in) if ((s.inv[k] || 0) < r.in[k]) { miss = k; break; }
@@ -2386,7 +2442,7 @@ const Jobs = (() => {
         j.stage = 4; j.made = 0;
       }
       if (j.stage === 4) {
-        if (!Machines.canCraft(s)) return j.made ? DONE : FAIL;
+        if (!Machines.hasInputs(s, r)) return j.made ? DONE : FAIL;
         c.activity = 'Vyrábí: ' + ITEMS[outType].name.toLowerCase();
         c.face(x, y);
         j.progress += c.work('craft');
@@ -2399,9 +2455,82 @@ const Jobs = (() => {
           for (const k in out) World.dropItem(c.tx, c.ty, k, out[k]);
           Game.stats.crafted++;
           j.progress = 0;
-          if (++j.made >= 8 || World.counts[outType] >= s.target) return DONE;
+          if (++j.made >= 8 || World.counts[outType] >= target) return DONE;
         }
       }
+    },
+
+    /** Lov a porážka: přiblížit se na dostřel, mířit, vystřelit (hodit oštěp). */
+    hunt(c, j) {
+      const a = Animals.byId(j.a);
+      if (!a || a.gone || !a.hunt) return DONE;
+      j.t = (j.t || 0) + 1;
+      if (j.t > 2600) return FAIL;
+      const d = Math.hypot(a.x - c.x, a.y - c.y);
+      const range = c.bow ? 7 : 5;
+      if (d > range) {
+        c.activity = 'Stopuje zvěř: ' + a.def.name.toLowerCase();
+        if (!c.path || (j.t % 40) === 0) {
+          if (!c.pathTo(a.tx, a.ty, 1)) { c.unreach.set(j.key, TimeSys.minutes + 60); return FAIL; }
+        }
+        c.followPath();
+        j.progress = 0;
+        return;
+      }
+      c.path = null;
+      c.activity = (a.def.wild ? 'Loví: ' : 'Poráží: ') + a.def.name.toLowerCase();
+      c.face(a.tx, a.ty);
+      j.progress += c.work('hunt');
+      c.workFrac = j.progress / 60;
+      if (j.progress >= 60) {
+        j.progress = 0;
+        Game.shot(c.x, c.y - 0.4, a.x, a.y, c.bow ? '#e8e2d0' : '#b98a56');
+        const hit = !a.def.wild || U.chance((c.bow ? 0.6 : 0.42) + c.skills.hunt.lvl * 0.03);
+        if (hit) {
+          a.hp -= c.bow ? 24 : 15;
+          if (a.hp <= 0 || !a.def.wild) { Animals.kill(a); return DONE; }
+        }
+        if (a.def.wild) a.flee(c, false);
+      }
+    },
+
+    /** Stříhání ovce. */
+    shear(c, j) {
+      const a = Animals.byId(j.a);
+      if (!a || a.gone || a.prod < 1) return DONE;
+      j.t = (j.t || 0) + 1;
+      if (j.t > 2000) return FAIL;
+      if (Math.hypot(a.x - c.x, a.y - c.y) > 1.6) {
+        c.activity = 'Jde stříhat ovci';
+        if (!c.path || (j.t % 40) === 0) { if (!c.pathTo(a.tx, a.ty, 1)) return FAIL; }
+        c.followPath();
+        return;
+      }
+      c.path = null;
+      a.timer = 60; a.path = null;      // ovce chvíli postojí
+      c.activity = 'Stříhá ovci';
+      c.face(a.tx, a.ty);
+      j.progress += c.work('grow');
+      c.workFrac = j.progress / 70;
+      if (j.progress >= 70) {
+        a.prod = 0;
+        World.dropItem(c.tx, c.ty, 'wool', a.def.wool);
+        return DONE;
+      }
+    },
+
+    /** Vzít si výbavu (teplé oblečení, kuši). */
+    equip(c, j) {
+      const it = World.items[j.i];
+      if (!it || it.type !== j.item || c[j.item]) return FAIL;
+      c.activity = 'Jde si pro: ' + ITEMS[j.item].name.toLowerCase();
+      const r = walk(c, j, ix(j.i), iy(j.i), 0, 'i' + j.i);
+      if (r === 'fail') return FAIL;
+      if (r === 'moving') return;
+      if (!c.pickup(j.i, 1, j.item)) return FAIL;
+      c.carry = null;
+      c[j.item] = true;
+      return DONE;
     },
 
     /** Výzkum u výzkumného stolu. */
@@ -2494,13 +2623,15 @@ const Jobs = (() => {
       if (!s || s.type !== 'campfire' || s.decon) return FAIL;
       const x = ix(i), y = iy(i);
       if (j.stage === 0) {
-        if (c.carry && c.carry.type === 'food') { j.stage = 2; }
+        if (c.carry && COOKABLE.includes(c.carry.type)) { j.mat = c.carry.type; j.stage = 2; }
         else {
-          const src = nearestItem(['food'], c);
+          // maso a vejce se kazí nejrychleji → vařit je přednostně
+          let src = nearestItem(['meat'], c);
+          if (src < 0) src = nearestItem(['egg', 'food'], c);
           if (src < 0) return FAIL;
           const amt = Math.min(Game.availItem(src), 4);
           Game.reserveItem(src, amt, c);
-          j.src = src; j.amt = amt; j.stage = 1;
+          j.src = src; j.amt = amt; j.mat = World.items[src].type; j.stage = 1;
         }
       }
       if (j.stage === 1) {
@@ -2508,7 +2639,7 @@ const Jobs = (() => {
         const r = walk(c, j, ix(j.src), iy(j.src), 0);
         if (r === 'fail') { c.unreach.set('i' + j.src, TimeSys.minutes + 60); return FAIL; }
         if (r === 'moving') return;
-        if (!c.pickup(j.src, j.amt, 'food')) return FAIL;
+        if (!c.pickup(j.src, j.amt, j.mat)) return FAIL;
         j.stage = 2;
       }
       if (j.stage === 2) {
@@ -2519,7 +2650,7 @@ const Jobs = (() => {
         j.stage = 3; j.made = 0;
       }
       if (j.stage === 3) {
-        if (!c.carry || c.carry.type !== 'food') return FAIL;
+        if (!c.carry || c.carry.type !== j.mat) return FAIL;
         c.activity = 'Vaří jídlo';
         c.face(x, y);
         j.progress += c.work('cook');
@@ -2578,7 +2709,7 @@ const Jobs = (() => {
     eat(c, j) {
       if (j.stage === 0) {
         const it = World.items[j.i];
-        if (!it || (it.type !== 'meal' && it.type !== 'food')) return FAIL;
+        if (!it || (it.type !== 'meal' && it.type !== 'food' && it.type !== 'egg')) return FAIL;
         c.activity = 'Jde se najíst';
         const r = walk(c, j, ix(j.i), iy(j.i), 0, 'i' + j.i);
         if (r === 'fail') return FAIL;
@@ -3026,6 +3157,47 @@ const Sprites = (() => {
         set(cx + x, cy + y, c);
       }
     }));
+    S.items.meat = outline(paint(16, 16, (set) => {
+      for (let y = 4; y < 13; y++) for (let x = 3; x < 13; x++) {
+        const dx = (x - 7.5) / 5, dy = (y - 8) / 4.2;
+        if (dx * dx + dy * dy > 1) continue;
+        set(x, y, dx + dy < -0.5 ? [226, 110, 100] : dx + dy > 0.6 ? [150, 50, 50] : [196, 76, 70]);
+      }
+      set(6, 7, [240, 200, 190]); set(7, 8, [240, 200, 190]); set(9, 9, [240, 200, 190]);
+      set(12, 11, [236, 230, 214]); set(13, 12, [236, 230, 214]); set(14, 12, [250, 246, 236]); set(13, 13, [250, 246, 236]);
+    }));
+    S.items.egg = outline(paint(16, 16, (set) => {
+      for (const [cx, cy] of [[5, 10], [10, 10], [8, 6]]) for (let y = -3; y <= 3; y++) for (let x = -2; x <= 2; x++) {
+        if ((x * x) / 5.5 + (y * y) / 9.5 > 1) continue;
+        set(cx + x, cy + y, x + y < -1 ? [252, 248, 236] : x + y > 2 ? [206, 190, 160] : [236, 224, 200]);
+      }
+    }));
+    S.items.wool = outline(paint(16, 16, (set) => {
+      for (const [cx, cy, r] of [[6, 9, 3.6], [10, 9, 3.4], [8, 6, 3.2]]) for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) {
+        if (Math.hypot(x, y) > r) continue;
+        set(cx + x, cy + y, H(cx + x, cy + y, 41) > 0.7 ? [206, 204, 196] : x + y < 0 ? [250, 248, 242] : [228, 226, 218]);
+      }
+    }));
+    S.items.leather = outline(paint(16, 16, (set) => {
+      for (let y = 3; y < 13; y++) for (let x = 3; x < 13; x++) {
+        if ((x < 5 || x > 10) && (y > 5 && y < 10)) continue;
+        set(x, y, (x + y) % 5 === 0 ? [124, 80, 44] : y < 5 ? [176, 122, 72] : [150, 100, 58]);
+      }
+    }));
+    S.items.coat = outline(paint(16, 16, (set, get, rect) => {
+      rect(5, 3, 6, 10, [120, 86, 150]); rect(2, 4, 3, 6, [104, 72, 132]); rect(11, 4, 3, 6, [104, 72, 132]);
+      rect(5, 3, 6, 1, [236, 232, 220]); rect(7, 4, 2, 9, [96, 66, 122]); rect(5, 12, 6, 1, [236, 232, 220]);
+    }));
+    S.items.bow = outline(paint(16, 16, (set, get, rect) => {
+      for (let k = 0; k < 11; k++) set(2 + k, 8, [150, 104, 60]);
+      rect(11, 3, 2, 11, [110, 72, 40]); set(10, 3, [110, 72, 40]); set(10, 13, [110, 72, 40]);
+      for (let k = 0; k < 5; k++) { set(9 - k * 0, 4 + k, [220, 220, 220], 0); }
+      for (let y = 4; y < 13; y++) set(9, y, [226, 226, 226]);
+      set(2, 8, [200, 204, 214]); set(1, 8, [200, 204, 214]);
+    }));
+    S.items.ammo = outline(paint(16, 16, (set, get, rect) => {
+      for (const x of [3, 7, 11]) { rect(x, 6, 2, 7, [196, 150, 60]); rect(x, 4, 2, 2, [150, 156, 168]); set(x, 6, [236, 200, 110]); }
+    }));
     S.items.meal = outline(paint(16, 16, (set) => {
       for (let y = 7; y < 14; y++) for (let x = 2; x < 14; x++) {
         const dx = (x - 7.5) / 6, dy = (y - 8) / 6;
@@ -3132,6 +3304,20 @@ const Sprites = (() => {
       rect(7, 7, 2, 3, [232, 200, 96]); set(7, 9, [150, 120, 50]);
       rect(2, 13, 12, 1, [96, 62, 34]);
     }));
+    // ----- chov a krejčí -----
+    S.build.tailor = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 7, 14, 5, [150, 104, 60]); rect(1, 7, 14, 1, [186, 138, 86]); rect(1, 11, 14, 1, [100, 66, 38]);
+      rect(2, 12, 2, 4, [100, 66, 38]); rect(12, 12, 2, 4, [100, 66, 38]);
+      rect(3, 4, 5, 3, [120, 86, 150]); rect(3, 4, 5, 1, [150, 116, 180]);
+      rect(10, 3, 3, 4, [236, 232, 220]); set(11, 2, [200, 60, 60]);
+    }));
+    const hut = (roof, roofD, wall) => outline(paint(16, 16, (set, get, rect) => {
+      rect(2, 8, 12, 8, wall); rect(2, 15, 12, 1, U.shade(wall, 0.7));
+      for (let y = 1; y < 9; y++) { const w = 1 + y; rect(8 - w, y, w * 2, 1, y & 1 ? roof : roofD); }
+      rect(6, 11, 4, 5, [50, 36, 28]);
+    }));
+    S.build.coop = hut([196, 150, 80], [170, 124, 60], [176, 126, 74]);
+    S.build.sheepfold = hut([150, 90, 70], [124, 70, 54], [200, 190, 170]);
     // ----- dílny, stroje, energie -----
     const metal = [120, 126, 138], metalL = [176, 184, 196], metalD = [72, 78, 90];
     const wood = [150, 104, 60], woodL = [186, 138, 86], woodD = [100, 66, 38];
@@ -3373,22 +3559,36 @@ const Sprites = (() => {
 
   // ============ ZVĚŘ ============
   function makeAnimals() {
-    const boar = (f, flip) => outline(paint(16, 12, (set, get, rect) => {
+    // čtyřnožec z boku; `o` = barvy a rozměry
+    const quad = (o) => (f, flip) => outline(paint(16, 14, (set, get, rect) => {
       const X = (x) => flip ? 15 - x : x;
-      const body = [96, 72, 56], dark = [70, 52, 40], light = [124, 96, 76];
-      for (let y = 3; y < 9; y++) for (let x = 3; x < 13; x++) {
-        const dx = (x - 7.5) / 5, dy = (y - 5.5) / 3;
-        if (dx * dx + dy * dy <= 1) set(X(x), y, y < 5 ? light : y > 6 ? dark : body);
+      const R = (x, y, w, h, c) => { for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) set(X(xx), yy, c); };
+      const [bx, by, bw, bh] = o.body;
+      for (let y = by; y < by + bh; y++) for (let x = bx; x < bx + bw; x++) {
+        const dx = (x - bx - bw / 2 + 0.5) / (bw / 2), dy = (y - by - bh / 2 + 0.5) / (bh / 2);
+        if (dx * dx + dy * dy <= 1.05) set(X(x), y, dy < -0.3 ? o.light : dy > 0.4 ? o.dark : (o.fluff && H(x, y, 9) > 0.7 ? o.dark : o.col));
       }
-      for (let x = 4; x < 11; x += 2) set(X(x), 2, dark);          // štětiny
-      rect(flip ? 12 : 1, 5, 3, 3, body); set(X(1), 6, [200, 150, 140]); set(X(0), 6, [200, 150, 140]);
-      set(X(2), 5, [20, 16, 16]); set(X(1), 8, [236, 230, 214]);    // oko, kel
-      const l1 = f ? 0 : 1, l2 = f ? 1 : 0;
-      rect(X(4) - (flip ? 0 : 0), 9, 1, 2 - l1, dark); rect(X(6), 9, 1, 2 - l2, dark);
-      rect(X(9), 9, 1, 2 - l2, dark); rect(X(11), 9, 1, 2 - l1, dark);
-      set(X(13), 4, dark);
+      R(o.head[0], o.head[1], o.head[2], o.head[3], o.headCol || o.col);
+      set(X(o.head[0] + 1), o.head[1] + 1, [20, 16, 16]);
+      if (o.extra) o.extra(set, X, R);
+      const l1 = f ? 0 : 1, l2 = f ? 1 : 0, ly = by + bh - 1, ll = o.leg;
+      R(bx + 1, ly, 1, ll - l1, o.dark); R(bx + 3, ly, 1, ll - l2, o.dark);
+      R(bx + bw - 4, ly, 1, ll - l2, o.dark); R(bx + bw - 2, ly, 1, ll - l1, o.dark);
     }));
-    S.animals = { boar: { left: [boar(0, false), boar(1, false)], right: [boar(0, true), boar(1, true)] } };
+    const mk = (fn) => ({ left: [fn(0, false), fn(1, false)], right: [fn(0, true), fn(1, true)] });
+    const boar = quad({ body: [3, 4, 10, 6], head: [1, 6, 3, 3], col: [96, 72, 56], dark: [70, 52, 40], light: [124, 96, 76], leg: 3,
+      extra: (set, X) => { for (let x = 4; x < 11; x += 2) set(X(x), 3, [70, 52, 40]); set(X(0), 7, [200, 150, 140]); set(X(1), 9, [236, 230, 214]); } });
+    const deer = quad({ body: [4, 4, 9, 5], head: [1, 2, 3, 3], col: [168, 118, 70], dark: [124, 84, 48], light: [198, 150, 98], leg: 5,
+      extra: (set, X, R) => { R(3, 4, 2, 2, [168, 118, 70]); set(X(2), 0, [226, 214, 190]); set(X(3), 1, [226, 214, 190]); set(X(1), 1, [226, 214, 190]); set(X(13), 5, [240, 236, 226]); } });
+    const sheep = quad({ body: [3, 3, 10, 7], head: [1, 5, 3, 3], col: [236, 234, 226], dark: [200, 198, 190], light: [252, 250, 244], headCol: [70, 62, 58], leg: 3, fluff: true });
+    const chicken = (f, flip) => outline(paint(10, 10, (set, get, rect) => {
+      const X = (x) => flip ? 9 - x : x;
+      for (let y = 3; y < 8; y++) for (let x = 2; x < 8; x++) if (Math.hypot(x - 4.5, (y - 5) * 1.2) < 3) set(X(x), y, y < 5 ? [250, 246, 236] : [222, 214, 196]);
+      set(X(2), 2, [250, 246, 236]); set(X(2), 3, [250, 246, 236]); set(X(1), 3, [236, 170, 60]); set(X(2), 1, [210, 50, 50]);
+      set(X(8), 3, [222, 214, 196]); set(X(8), 4, [222, 214, 196]);
+      set(X(4), 8 + (f ? 0 : 0), [236, 170, 60]); if (!f) set(X(5), 8, [236, 170, 60]); else set(X(3), 8, [236, 170, 60]);
+    }));
+    S.animals = { boar: mk(boar), deer: mk(deer), sheep: mk(sheep), chicken: mk(chicken) };
   }
 
   // ============ IKONY NÁSTROJŮ ============
@@ -3430,6 +3630,15 @@ const Sprites = (() => {
     }));
     I.priorities = outline(paint(16, 16, (set, get, rect) => {
       for (let r = 0; r < 4; r++) { rect(2, 2 + r * 3, 3, 2, [230, 200, 90]); rect(6, 2 + r * 3, 8, 2, [220, 220, 220]); }
+    }));
+    I.hunt = outline(paint(16, 16, (set, get, rect) => {
+      for (let k = 0; k < 12; k++) { set(2 + k, 13 - k, [150, 100, 56]); set(3 + k, 13 - k, [120, 80, 44]); }
+      rect(11, 1, 4, 2, [210, 214, 224]); rect(13, 1, 2, 4, [210, 214, 224]); set(12, 3, [210, 214, 224]);
+    }));
+    I.zone_pasture = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 11, 14, 4, [96, 150, 70]); rect(1, 11, 14, 1, [126, 180, 90]);
+      for (const x of [2, 7, 12]) { rect(x, 5, 2, 8, [176, 126, 74]); set(x, 5, [206, 158, 100]); }
+      rect(1, 7, 14, 1, [150, 104, 60]); rect(1, 10, 14, 1, [150, 104, 60]);
     }));
     I.research_btn = outline(paint(16, 16, (set, get, rect) => {
       rect(6, 1, 4, 5, [200, 220, 236]); rect(5, 1, 6, 1, [150, 170, 190]);
@@ -3511,6 +3720,9 @@ class Colonist {
     this.energy = U.range(75, 95);
     this.health = 100;
     this.dead = false;
+    this.warmth = 100;       // tělesné teplo 0..100
+    this.coat = false;       // má teplé oblečení
+    this.bow = false;        // má kuši
     this.mood = 60;
     this.moodTarget = 60;
     this.thoughts = [];
@@ -3575,9 +3787,10 @@ class Colonist {
     const temp = World.tempAt(here);
     if (this.health < 40) out.push({ label: 'Podlomené zdraví', val: -8 });
     if (Weather.rain > 0.3 && !roofed) out.push({ label: temp < 0 ? 'Sněží mu/jí za krk' : 'Moknutí v dešti', val: -4 });
-    if (temp < -2) out.push({ label: 'Mrzne', val: -8 });
-    else if (temp < 6) out.push({ label: 'Je mu/jí zima', val: -4 });
-    else if (roofed && TimeSys.temp() < 6) out.push({ label: 'Teplo domova', val: 3 });
+    if (this.warmth < 20) out.push({ label: 'Podchlazení', val: -12 });
+    else if (this.warmth < 55) out.push({ label: 'Prochladl/a', val: -6 });
+    else if (roofed && TimeSys.temp() < 6 && temp > 8) out.push({ label: 'Teplo domova', val: 3 });
+    if (this.coat && TimeSys.temp() < 4) out.push({ label: 'Teplé oblečení', val: 2 });
     if (World.floor[here]) out.push({ label: 'Pěkné prostředí', val: 2 });
     if (TimeSys.daylight() < 0.4 && Game.nearLight(this.tx, this.ty)) out.push({ label: 'Teplo a světlo ohně', val: 3 });
     if (Weather.cur === 'clear' && TimeSys.daylight() > 0.8) out.push({ label: 'Krásný den', val: 2 });
@@ -3601,6 +3814,12 @@ class Colonist {
   /** Dlouhé hladovění a vyčerpání ubírají zdraví; sytý a odpočatý kolonista se léčí. */
   updateHealth(hours) {
     let d = 0, cause = '';
+    // tělesné teplo: bez teplého oblečení venku v mrazu ubývá, v teple se vrací
+    const amb = World.tempAt(World.idx(this.tx, this.ty));
+    const comfort = this.coat ? -14 : 3;
+    if (amb < comfort) this.warmth = Math.max(0, this.warmth - (comfort - amb) * 0.9 * hours);
+    else this.warmth = Math.min(100, this.warmth + (6 + (amb - comfort)) * 1.2 * hours);
+    if (this.warmth < 20) { d -= 3 * hours; cause = 'podchlazením'; }
     if (this.hunger <= 0) { d -= 4.5 * hours; cause = 'hladem'; }
     if (this.energy <= 0) { d -= 2 * hours; cause = cause || 'vyčerpáním'; }
     if (d === 0 && this.hunger > 30 && this.energy > 15) d = (this.sleeping ? 3 : 1.5) * hours;
@@ -3690,7 +3909,7 @@ class Colonist {
     this.job = job;
     job.stage = 0; job.progress = 0; job.walkKey = null;
     if (job.key) Game.reserve(job.key, this);
-    if (job.type === 'eat') Game.reserveItem(job.i, 1, this);
+    if (job.type === 'eat' || job.type === 'equip') Game.reserveItem(job.i, 1, this);
     if (job.type === 'sleep' && job.bed >= 0) Game.reserve('b' + job.bed, this);
   }
   endJob() {
@@ -3718,6 +3937,12 @@ class Colonist {
     if (this.energy < 25 || (night && this.energy < 92)) {
       this.startJob({ type: 'sleep', bed: Jobs.findBed(this) });
       return;
+    }
+    // výbava: teplé oblečení a kuše, pokud jsou ve skladu
+    const gear = !this.coat && Jobs.anyItem('coat') ? 'coat' : !this.bow && Jobs.anyItem('bow') ? 'bow' : null;
+    if (gear) {
+      const gi = Jobs.nearestItem([gear], this);
+      if (gi >= 0) { this.startJob({ type: 'equip', i: gi, item: gear }); return; }
     }
     const job = Jobs.findWork(this);
     if (job) { this.startJob(job); return; }
@@ -3811,20 +4036,28 @@ function createColonists(start) {
 // ===== js/animals.js =====
 'use strict';
 /**
- * Animals – zvěř na mapě. Zatím divočáci, kteří při nájezdu žerou úrodu na
- * polích; bdělý kolonista poblíž je zaplaší.
+ * Animals – zvěř a hospodářská zvířata.
+ *  - jeleni: divoká zvěř, bloumá po mapě, dá se lovit,
+ *  - divočáci: při nájezdu žerou úrodu na polích; bdělý kolonista je zaplaší,
+ *  - slepice a ovce: žijí u kurníku / ovčína na zóně Pastvina, dávají vejce a vlnu.
  */
 class Animal {
   constructor(type, x, y) {
+    this.id = Animals.nextId++;
     this.type = type;
+    this.def = ANIMALS[type];
     this.x = x + 0.5; this.y = y + 0.5;
     this.dir = 'left';
-    this.state = 'raid';      // raid | eat | flee
+    this.state = 'wander';    // wander | raid | eat | flee
     this.path = null; this.pathI = 0;
-    this.timer = 0;
+    this.timer = U.int(20, 200);
     this.target = -1;
-    this.leaveAt = TimeSys.minutes + 60 * 6;
+    this.leaveAt = 0;
     this.animT = 0;
+    this.hp = this.def.hp;
+    this.hunt = false;        // označeno k lovu / porážce
+    this.home = -1;           // index kurníku / ovčína
+    this.prod = U.rand();     // postup snášky / růstu vlny 0..1
     this.gone = false;
   }
   get tx() { return Math.floor(this.x); }
@@ -3849,22 +4082,24 @@ class Animal {
     this.animT += sp;
     return false;
   }
-  scared() {
+  /** Bdělý kolonista nablízku? */
+  scared(r) {
     for (const c of Game.colonists) {
-      if (!c.sleeping && Math.hypot(c.x - this.x, c.y - this.y) < 3) return true;
+      if (!c.sleeping && Math.hypot(c.x - this.x, c.y - this.y) < r) return c;
     }
-    return false;
+    return null;
   }
-  flee() {
+  /** Úprk pryč od kolonisty / kolonie. `leave` = zmizet z mapy po doběhnutí. */
+  flee(from, leave) {
     this.state = 'flee';
-    // utéct pryč od kolonie
-    const s = World.start;
-    const ang = Math.atan2(this.y - s.y, this.x - s.x) + U.range(-0.5, 0.5);
-    for (let r = 26; r > 6; r -= 4) {
+    this.leaving = !!leave;
+    const s = from || World.start;
+    const ang = Math.atan2(this.y - (s.y + 0.5), this.x - (s.x + 0.5)) + U.range(-0.6, 0.6);
+    for (let r = leave ? 26 : 10; r > 3; r -= 3) {
       const x = Math.round(this.x + Math.cos(ang) * r), y = Math.round(this.y + Math.sin(ang) * r);
       if (World.canWalk(x, y) && this.goTo(x, y)) return;
     }
-    this.gone = true;
+    if (leave) this.gone = true; else { this.state = 'wander'; this.timer = 60; }
   }
   nearestCrop() {
     let best = -1, bd = Infinity;
@@ -3874,34 +4109,134 @@ class Animal {
     }
     return best;
   }
+  /** Náhodný cíl potulky; hospodářská zvířata se drží pastviny u svého domova. */
+  wanderTarget() {
+    const live = !this.def.wild;
+    for (let k = 0; k < 10; k++) {
+      let bx = this.tx, by = this.ty, r = 5;
+      if (live && this.home >= 0) { bx = this.home % World.w; by = (this.home / World.w) | 0; r = 6; }
+      const x = bx + U.int(-r, r), y = by + U.int(-r, r);
+      if (!World.canWalk(x, y)) continue;
+      const i = World.idx(x, y);
+      if (live && Animals.hasPasture(this.home) && World.zone[i] !== 3) continue;
+      if (live && !Animals.hasPasture(this.home) && Math.max(Math.abs(x - bx), Math.abs(y - by)) > 2) continue;
+      if (World.terrain[i] === T.SHALLOW) continue;
+      return this.goTo(x, y);
+    }
+    return false;
+  }
 
   tick() {
-    if (this.state === 'flee') { if (this.step(0.13)) this.gone = true; return; }
-    if (TimeSys.minutes > this.leaveAt || this.scared()) { this.flee(); return; }
-    if (this.state === 'raid') {
-      if (this.target < 0 || !World.crops[this.target]) {
-        this.target = this.nearestCrop();
-        if (this.target < 0 || !this.goTo(this.target % World.w, (this.target / World.w) | 0)) { this.flee(); return; }
-      }
-      if (this.step(0.075)) { this.state = 'eat'; this.timer = 420; }
-    } else if (this.state === 'eat') {
-      if (--this.timer <= 0) {
+    const d = this.def;
+    if (this.state === 'flee') {
+      if (this.step(d.speed * 1.5)) { if (this.leaving) this.gone = true; else { this.state = 'wander'; this.timer = 150; } }
+      return;
+    }
+    if (d.wild) {
+      const c = this.scared(d.shy);
+      if (c) { this.flee(c, this.type === 'boar' && this.state !== 'wander'); return; }
+    }
+    if (this.state === 'raid' || this.state === 'eat') {
+      if (TimeSys.minutes > this.leaveAt) { this.flee(null, true); return; }
+      if (this.state === 'raid') {
+        if (this.target < 0 || !World.crops[this.target]) {
+          this.target = this.nearestCrop();
+          if (this.target < 0 || !this.goTo(this.target % World.w, (this.target / World.w) | 0)) { this.flee(null, true); return; }
+        }
+        if (this.step(d.speed * 0.8)) { this.state = 'eat'; this.timer = 420; }
+      } else if (--this.timer <= 0) {
         if (World.crops[this.target]) { World.removeCrop(this.target); Game.stats.cropsEaten++; }
         this.target = -1;
         this.state = 'raid';
       }
+      return;
+    }
+    // potulka
+    if (this.path && this.pathI < this.path.length) { this.step(d.speed * 0.5); return; }
+    if (--this.timer <= 0) {
+      this.timer = U.int(120, 400);
+      this.wanderTarget();
     }
   }
 }
 
 const Animals = {
   list: [],
-  reset() { this.list = []; },
+  nextId: 1,
+  pastureCache: new Map(),
+  reset() { this.list = []; this.nextId = 1; this.pastureCache.clear(); },
+
   tick() {
     if (!this.list.length) return;
     for (const a of this.list) a.tick();
     if (this.list.some(a => a.gone)) this.list = this.list.filter(a => !a.gone);
   },
+  at(x, y) { return this.list.filter(a => a.tx === x && a.ty === y); },
+  byId(id) { return this.list.find(a => a.id === id); },
+  count(type) { let n = 0; for (const a of this.list) if (a.type === type) n++; return n; },
+
+  /** Počet políček pastviny v okolí domova (kurníku / ovčína). */
+  pastureTiles(home) {
+    if (home < 0) return 0;
+    const hx = home % World.w, hy = (home / World.w) | 0;
+    let n = 0;
+    for (let y = hy - 7; y <= hy + 7; y++) for (let x = hx - 7; x <= hx + 7; x++) {
+      if (World.inb(x, y) && World.zone[World.idx(x, y)] === 3) n++;
+    }
+    return n;
+  },
+  hasPasture(home) { return this.pastureTiles(home) >= 4; },
+  herd(home) { return this.list.filter(a => a.home === home); },
+  /** Jak dobře je stádo živené: 1 = dost pastviny (3 políčka na kus), jinak úměrně méně. */
+  feed(home) {
+    const n = this.herd(home).length;
+    if (!n) return 1;
+    return U.clamp(this.pastureTiles(home) / (n * 3), 0.25, 1) * (TimeSys.season === 3 ? 0.5 : 1);
+  },
+
+  /** Jednou za herní hodinu: snáška, vlna, množení, přírůstek divoké zvěře. */
+  hourly() {
+    const feedOf = new Map();
+    for (const a of this.list) {
+      if (a.def.wild || a.home < 0) continue;
+      if (!World.struct[a.home] || !BUILD[World.struct[a.home].type].livestock) { a.home = -1; continue; }
+      if (!feedOf.has(a.home)) feedOf.set(a.home, this.feed(a.home));
+      const f = feedOf.get(a.home);
+      if (a.def.eggHours) {
+        a.prod += f / a.def.eggHours;
+        if (a.prod >= 1) { a.prod = 0; World.dropItem(a.tx, a.ty, 'egg', 1); Game.stats.eggs = (Game.stats.eggs || 0) + 1; }
+      } else if (a.def.woolHours && a.prod < 1) a.prod = Math.min(1, a.prod + f / a.def.woolHours);
+    }
+    // množení u domovů
+    for (const type of ['coop', 'sheepfold']) for (const i of World.structBy[type] || []) {
+      const s = World.struct[i], L = BUILD[type].livestock;
+      s.breed = (s.breed || 0) + (feedOf.get(i) || this.feed(i));
+      const herd = this.herd(i);
+      if (s.breed >= 60 && herd.length >= 2 && herd.length < L.cap) { s.breed = 0; this.spawnLivestock(i, 1); }
+      else if (herd.length < 2 && s.breed >= 96) { s.breed = 0; this.spawnLivestock(i, 1); }   // zatoulaný kus se vrátí
+    }
+    // divoká zvěř: jeleni se objevují dál od kolonie
+    if (this.count('deer') < 9 && U.chance(0.12)) {
+      for (let k = 0; k < 30; k++) {
+        const x = U.int(3, World.w - 4), y = U.int(3, World.h - 4), i = World.idx(x, y);
+        if (!World.walk[i] || World.terrain[i] === T.SHALLOW || Math.hypot(x - World.start.x, y - World.start.y) < 22) continue;
+        const n = U.int(2, 3);
+        for (let q = 0; q < n; q++) { const p = World.canWalk(x + q, y) ? { x: x + q, y } : { x, y }; this.list.push(new Animal('deer', p.x, p.y)); }
+        break;
+      }
+    }
+  },
+  spawnLivestock(home, n) {
+    const L = BUILD[World.struct[home].type].livestock;
+    const p = World.nearestWalkable(home % World.w, (home / World.w) | 0);
+    for (let k = 0; k < n; k++) { const a = new Animal(L.type, p.x, p.y); a.home = home; this.list.push(a); }
+  },
+  /** Po dostavbě kurníku / ovčína přijdou první zvířata. */
+  onBuilt(s) {
+    const L = BUILD[s.type].livestock;
+    if (L) { this.spawnLivestock(s.i, L.start); Game.alert(`${BUILD[s.type].name}: přišla první zvířata. Vyznač kolem zónu Pastvina.`, 'good', s.i % World.w, (s.i / World.w) | 0); }
+  },
+
   /** Nájezd divočáků na pole. Vrací true, pokud se podařilo zvěř vysadit. */
   boarRaid() {
     if (World.cropSet.size < 6) return false;
@@ -3914,15 +4249,40 @@ const Animals = {
       const ang = U.rand() * Math.PI * 2, r = U.range(16, 24);
       const x = Math.round(cx + Math.cos(ang) * r), y = Math.round(cy + Math.sin(ang) * r);
       if (!World.canWalk(x, y) || !Pathfinder.find(x, y, cx, cy, 1)) continue;
-      this.list.push(new Animal('boar', x, y));
+      const a = new Animal('boar', x, y);
+      a.state = 'raid'; a.leaveAt = TimeSys.minutes + 60 * 6;
+      this.list.push(a);
       n++;
     }
-    if (n) Game.alert('Divočáci se ženou na pole! Kolonista poblíž je zaplaší.', 'warn', cx, cy);
+    if (n) Game.alert('Divočáci se ženou na pole! Kolonista poblíž je zaplaší, lovec je může skolit.', 'warn', cx, cy);
     return n > 0;
   },
-  pack() { return this.list.map(a => ({ type: a.type, x: a.x, y: a.y, leaveAt: a.leaveAt })); },
-  unpack(arr) {
-    this.list = (arr || []).map(d => { const a = new Animal(d.type, Math.floor(d.x), Math.floor(d.y)); a.leaveAt = d.leaveAt; return a; });
+  /** Zabité zvíře: maso a kůže na zem. */
+  kill(a) {
+    a.gone = true;
+    if (a.def.meat) World.dropItem(a.tx, a.ty, 'meat', a.def.meat);
+    if (a.def.leather) World.dropItem(a.tx, a.ty, 'leather', a.def.leather);
+    Game.stats.hunted = (Game.stats.hunted || 0) + 1;
+  },
+
+  pack() { return { nextId: this.nextId, list: this.list.map(a => ({ id: a.id, type: a.type, x: a.x, y: a.y, state: a.state === 'flee' ? 'wander' : a.state, leaveAt: a.leaveAt, hp: a.hp, hunt: a.hunt, home: a.home, prod: +a.prod.toFixed(3) })) }; },
+  unpack(d) {
+    this.reset();
+    const arr = Array.isArray(d) ? d : (d && d.list) || [];
+    for (const q of arr) {
+      if (!ANIMALS[q.type]) continue;
+      const a = new Animal(q.type, Math.floor(q.x), Math.floor(q.y));
+      if (q.id) a.id = q.id;
+      a.x = q.x; a.y = q.y;
+      a.state = q.state || (q.type === 'boar' ? 'raid' : 'wander');
+      a.leaveAt = q.leaveAt || 0;
+      if (q.hp !== undefined) a.hp = q.hp;
+      a.hunt = !!q.hunt; a.home = q.home !== undefined ? q.home : -1;
+      if (q.prod !== undefined) a.prod = q.prod;
+      this.list.push(a);
+    }
+    if (d && d.nextId) this.nextId = d.nextId;
+    else this.nextId = Math.max(0, ...this.list.map(a => a.id)) + 1;
   },
 };
 
@@ -4129,8 +4489,23 @@ const Tools = (() => {
       apply: zoneTool(2),
       after: () => World.rebuildZones(),
     },
+    zone_pasture: {
+      name: 'Pastvina', mode: 'rect', hint: 'Táhni kolem kurníku nebo ovčína. Zvířata se drží na pastvině; počítej 3 políčka na kus.',
+      valid: i => World.zone[i] !== 3 && notBlockedTerrain(i) && !World.struct[i] && !(World.obj[i] && OBJECTS[World.obj[i].type].blocks),
+      apply: zoneTool(3),
+      after: () => World.rebuildZones(),
+    },
+    hunt: {
+      name: 'Lovit', mode: 'rect', hint: 'Táhni přes zvěř (nebo vlastní zvířata k porážce). Jednotlivý kus označíš i klepnutím na něj nástrojem Výběr.',
+      valid: i => Animals.at(i % World.w, (i / World.w) | 0).some(a => !a.hunt),
+      apply: i => {
+        const marked = Animals.at(i % World.w, (i / World.w) | 0).filter(a => !a.hunt);
+        for (const a of marked) a.hunt = true;
+        return () => { for (const a of marked) a.hunt = false; };
+      },
+    },
     zone_clear: {
-      name: 'Smazat zónu', mode: 'rect', hint: 'Táhni pro odstranění skladu nebo pole.',
+      name: 'Smazat zónu', mode: 'rect', hint: 'Táhni pro odstranění skladu, pole nebo pastviny.',
       valid: i => World.zone[i] !== 0,
       apply: zoneTool(0),
       after: () => World.rebuildZones(),
@@ -4417,7 +4792,13 @@ const Input = {
       const d = Math.hypot(w.x / Config.TILE - c.x, w.y / Config.TILE - (c.y - 0.35));
       if (d < bd) { bd = d; best = c; }
     }
+    let an = null, ad = 0.8;
+    for (const a of Animals.list) {
+      const d = Math.hypot(w.x / Config.TILE - a.x, w.y / Config.TILE - (a.y - 0.2));
+      if (d < ad) { ad = d; an = a; }
+    }
     if (best) Game.select({ type: 'colonist', c: best });
+    else if (an) Game.select({ type: 'animal', a: an });
     else if (World.inb(t.x, t.y)) Game.select({ type: 'tile', x: t.x, y: t.y });
     else Game.select(null);
   },
@@ -4583,7 +4964,7 @@ const Renderer = {
         const z = World.zone[i];
         if (z === 2) {
           if (!World.crops[i]) this.rect(wx, wy, TS, TS, 'rgba(120,200,80,0.16)');
-        }
+        } else if (z === 3) this.rect(wx, wy, TS, TS, 'rgba(200,230,140,0.13)');
         const fl = World.floor[i];
         if (fl) this.img(Sprites.build[fl.type], wx, wy, TS, TS);
         if (z === 1) this.rect(wx, wy, TS, TS, 'rgba(240,200,90,0.16)');
@@ -4610,7 +4991,7 @@ const Renderer = {
     for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) {
       const i = y * W + x, z = World.zone[i];
       if (!z) continue;
-      const col = z === 1 ? 'rgba(250,210,100,0.75)' : 'rgba(140,220,100,0.6)';
+      const col = z === 1 ? 'rgba(250,210,100,0.75)' : z === 2 ? 'rgba(140,220,100,0.6)' : 'rgba(230,240,170,0.6)';
       const wx = x * TS, wy = y * TS, th = 1;
       if (y === 0 || World.zone[i - W] !== z) this.rect(wx, wy, TS, th, col);
       if (y === World.h - 1 || World.zone[i + W] !== z) this.rect(wx, wy + TS - th, TS, th, col);
@@ -4693,6 +5074,19 @@ const Renderer = {
       const cs = byRow.get(y);
       if (cs) { cs.sort((a, b) => a.y - b.y); for (const c of cs) this.drawColonist(c); }
     }
+    // stopy výstřelů
+    if (Game.shots.length) {
+      const ctx = this.ctx;
+      ctx.lineWidth = Math.max(1, this.z * 0.6);
+      for (const s of Game.shots) {
+        ctx.strokeStyle = s.col || '#fff';
+        ctx.globalAlpha = Math.min(1, s.t / 5);
+        ctx.beginPath(); ctx.moveTo(this.X(s.x0 * TS), this.Y(s.y0 * TS)); ctx.lineTo(this.X(s.x1 * TS), this.Y(s.y1 * TS)); ctx.stroke();
+        s.t--;
+      }
+      ctx.globalAlpha = 1;
+      Game.shots = Game.shots.filter(s => s.t > 0);
+    }
     // plameny požárů
     for (const i of Fire.tiles.keys()) {
       const x = i % W, y = (i / W) | 0;
@@ -4706,13 +5100,21 @@ const Renderer = {
     const spr = Sprites.animals[a.type];
     if (!spr) return;
     const wx = a.x * TS, wy = a.y * TS;
+    const moving = a.path && a.pathI < a.path.length;
+    const f = moving ? Math.floor(a.animT * 4) % 2 : (a.state === 'eat' && Math.sin(this.time * 6) > 0 ? 1 : 0);
+    const im = spr[a.dir === 'right' ? 'right' : 'left'][f];
+    const w = im.width, h = im.height;
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
     ctx.beginPath();
-    ctx.ellipse(this.X(wx), this.Y(wy + 4), 6 * this.z, 2 * this.z, 0, 0, Math.PI * 2);
+    ctx.ellipse(this.X(wx), this.Y(wy + 4), w * 0.38 * this.z, 1.8 * this.z, 0, 0, Math.PI * 2);
     ctx.fill();
-    const moving = a.state !== 'eat';
-    const f = moving ? Math.floor(a.animT * 3) % 2 : (Math.sin(this.time * 6) > 0 ? 0 : 1);
-    this.img(spr[a.dir === 'right' ? 'right' : 'left'][f], wx - 8, wy - 7 + (moving ? 0 : 1), 16, 12);
+    this.img(im, wx - w / 2, wy + 5 - h, w, h);
+    if (a.hunt) this.img(Sprites.icons.hunt, wx - 4, wy - h - 4, 8, 8);
+    else if (a.type === 'sheep' && a.prod >= 1) this.rect(wx - 1, wy - h + 2, 2, 2, '#ffd35a');
+    if (Game.selected && Game.selected.a === a) {
+      ctx.strokeStyle = '#ffe36e'; ctx.lineWidth = Math.max(1.5, this.z * 0.7);
+      ctx.beginPath(); ctx.ellipse(this.X(wx), this.Y(wy + 4), (w * 0.5 + 1) * this.z, 3 * this.z, 0, 0, Math.PI * 2); ctx.stroke();
+    }
   },
 
   drawObj(o, i, x, y, wx, wy) {
@@ -5162,11 +5564,11 @@ const Renderer = {
  */
 const UI = {
   TABS: [
-    { id: 'orders', label: 'Příkazy', icon: 'chop', tools: ['select', 'chop', 'mine', 'harvest', 'decon', 'cancel'] },
+    { id: 'orders', label: 'Příkazy', icon: 'chop', tools: ['select', 'chop', 'mine', 'harvest', 'hunt', 'decon', 'cancel'] },
     { id: 'build', label: 'Stavba', icon: 'wall_wood', tools: ['wall_wood', 'wall_stone', 'door', 'floor_wood', 'floor_stone', 'bed', 'campfire', 'table', 'chair', 'chest', 'lamp'] },
-    { id: 'prod', label: 'Výroba', icon: 'belt', tools: ['saw', 'furnace', 'research', 'belt', 'drill', 'autosaw', 'autofurnace', 'pole', 'waterwheel', 'windmill', 'boiler'],
+    { id: 'prod', label: 'Výroba', icon: 'belt', tools: ['saw', 'furnace', 'tailor', 'research', 'belt', 'drill', 'autosaw', 'autofurnace', 'pole', 'waterwheel', 'windmill', 'boiler'],
       actions: [{ icon: 'research_btn', label: 'Výzkum', run: () => UI.openResearch() }, { icon: 'power_btn', label: 'Energie', run: () => UI.openPower() }] },
-    { id: 'zones', label: 'Zóny', icon: 'zone_farm', tools: ['zone_stock', 'zone_farm', 'zone_clear'] },
+    { id: 'zones', label: 'Zóny', icon: 'zone_farm', tools: ['zone_stock', 'zone_farm', 'zone_pasture', 'coop', 'sheepfold', 'zone_clear'] },
     { id: 'work', label: 'Práce', icon: 'priorities', action: () => UI.openPriorities() },
     { id: 'menu', label: 'Menu', icon: 'menu', action: () => UI.openMenu() },
   ],
@@ -5197,7 +5599,7 @@ const UI = {
     for (const k of ITEM_ORDER) {
       const chip = this.el('div', 'res', `${this.imgTag(k)}<span id="res-${k}">0</span>`);
       chip.title = ITEMS[k].name;
-      if (k === 'plank' || k === 'ore' || k === 'iron') chip.classList.add('hidden');
+      if (!ITEM_BASIC.includes(k)) chip.classList.add('hidden');
       res.appendChild(chip);
     }
     const pw = this.el('div', 'res hidden', `${this.imgTag('power_btn')}<span id="res-power">0/0</span>`);
@@ -5380,12 +5782,14 @@ const UI = {
     if (!s) { p.classList.add('hidden'); return; }
     p.classList.remove('hidden');
     if (s.type === 'colonist') this.colonistInfo(p, s.c, force);
+    else if (s.type === 'animal') this.animalInfo(p, s.a);
     else this.tileInfo(p, s.x, s.y);
   },
   bar(label, val, color) {
     return `<div class="stat"><span>${label}</span><div class="bar"><i style="width:${U.clamp(val, 0, 100)}%;background:${color}"></i></div><b>${Math.round(val)}</b></div>`;
   },
   colonistInfo(p, c, force) {
+    p.onpointerdown = null;
     if (force || p.dataset.kind !== 'c' + c.id) {
       p.dataset.kind = 'c' + c.id;
       p.innerHTML = `<div class="phead"><img class="pix portrait" src="${Sprites.toURL(c.portrait, 4)}" alt="">
@@ -5400,12 +5804,13 @@ const UI = {
       this.$('pFollow').onclick = () => { Camera.follow = Camera.follow === c ? null : c; };
       this.$('pPrio').onclick = () => this.openPriorities();
     }
-    this.$('pAct').textContent = (c.carry ? `[${ITEMS[c.carry.type].name} ×${c.carry.n}] ` : '') + c.activity;
+    this.$('pAct').textContent = (c.carry ? `[${ITEMS[c.carry.type].name} ×${c.carry.n}] ` : '') + c.activity + (c.coat || c.bow ? ' · výbava: ' + [c.coat && 'oblečení', c.bow && 'kuše'].filter(Boolean).join(', ') : '');
     this.$('pFollow').textContent = Camera.follow === c ? 'Nesledovat' : 'Sledovat';
     this.$('pNeeds').innerHTML =
       this.bar('Zdraví', c.health, c.health < 40 ? '#e5534b' : '#d9534f') +
       this.bar('Sytost', c.hunger, '#e3a23b') +
       this.bar('Energie', c.energy, '#58a6ff') +
+      (c.warmth < 99 ? this.bar('Teplo', c.warmth, '#ff8a4c') : '') +
       this.bar('Nálada', c.mood, this.moodColor(c.mood)) +
       `<div class="moodl">${this.moodLabel(c.mood)}</div>`;
     let sk = '';
@@ -5417,6 +5822,23 @@ const UI = {
     this.$('pSkills').innerHTML = sk;
     this.$('pThoughts').innerHTML = c.moodFactors().map(f =>
       `<div class="th ${f.val >= 0 ? 'pos' : 'neg'}"><span>${f.label}</span><b>${f.val > 0 ? '+' : ''}${f.val}</b></div>`).join('');
+  },
+  animalInfo(p, a) {
+    if (a.gone) { Game.select(null); return; }
+    const d = a.def, key = 'a' + a.id + ':' + a.hunt + ':' + (Game.tickCount / 30 | 0);
+    if (p.dataset.kind === key) return;
+    p.dataset.kind = key;
+    const rows = [['Druh', d.wild ? 'divoká zvěř' : 'hospodářské zvíře'], ['Zdraví', `${Math.max(0, Math.round(a.hp))} / ${d.hp}`], ['Dá', `${d.meat} masa` + (d.leather ? `, ${d.leather} kůže` : '')]];
+    if (d.eggHours) rows.push(['Snáška', Math.round(a.prod * 100) + ' %']);
+    if (d.woolHours) rows.push(['Vlna', a.prod >= 1 ? 'připravena ke stříhání' : Math.round(a.prod * 100) + ' %']);
+    if (!d.wild) rows.push(['Pastvina', a.home < 0 ? 'bez domova' : `${Animals.pastureTiles(a.home)} políček pro ${Animals.herd(a.home).length} ks` + (TimeSys.season === 3 ? ' – v zimě je produkce poloviční' : Animals.feed(a.home) < 1 ? ' – málo, produkce je nižší' : '')]);
+    p.innerHTML = `<div class="phead"><div><div class="ptitle">${d.name}</div></div><button class="x" id="infoClose">✕</button></div>
+      <table class="ttab">${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>
+      <div class="pbtns"><button data-act="hunt">${a.hunt ? 'Zrušit ' + (d.wild ? 'lov' : 'porážku') : (d.wild ? 'Ulovit' : 'Porazit')}</button></div>`;
+    this.$('infoClose').onclick = () => Game.select(null);
+    p.onpointerdown = (e) => {
+      if (e.target.closest && e.target.closest('[data-act="hunt"]')) { a.hunt = !a.hunt; p.dataset.kind = ''; this.animalInfo(p, a); }
+    };
   },
   tileInfo(p, x, y) {
     // panel s filtrem se nepřekresluje při každé aktualizaci (klepnutí by se ztrácela)
@@ -5475,7 +5897,7 @@ const UI = {
       const fr = World.freshness(i);
       rows.push(['Předmět', `${ITEMS[it.type].name} ×${it.n}` + (fr >= 0 ? ` – čerstvost ${Math.round(fr * 100)} %` : '')]);
     }
-    if (World.zone[i]) rows.push(['Zóna', World.zone[i] === 1 ? 'Sklad' : 'Pole']);
+    if (World.zone[i]) rows.push(['Zóna', ['', 'Sklad', 'Pole', 'Pastvina'][World.zone[i]]]);
     const room = World.roomAt(i);
     if (room) rows.push(['Místnost', `pod střechou, ${room.tiles.length} políček` + (room.beds.length === 1 ? ', ložnice' : '') + (room.heat ? ', vytápěná' : '')]);
     else if (World.isRoofed(i)) rows.push(['Střecha', 'ano']);
@@ -5805,22 +6227,21 @@ const Save = {
       const same = CODE[o.type] === base && !o.des && (o.type !== 'bush' || o.berries) && (o.type !== 'ore' || o.amount === Config.ORE_AMOUNT);
       if (!same) objSet.push([i, o]);
     }
-    const struct = [], floor = [], items = [], crops = [], bp = [], stock = [], farm = [];
+    const struct = [], floor = [], items = [], crops = [], bp = [], stock = [], farm = [], pasture = [];
     for (const i of W.structSet) {
       const s = W.struct[i];
       const row = [i, s.type, s.decon ? 1 : 0, s.owner, s.dir || 0];
       // stav stroje: zásobníky, postup, cíl výroby, hoření, opotřebení
-      if (BUILD[s.type].machine) {
-        const st = {};
-        for (const k of ['inv', 'out', 'prog', 'target', 'burn', 'wear', 'broken']) if (s[k] !== undefined) st[k] = s[k];
-        row.push(st);
-      }
+      const st = {};
+      let any = false;
+      for (const k of ['inv', 'out', 'prog', 'target', 'burn', 'wear', 'broken', 'breed', 'filter', 'unload', 'hp', 'rr']) if (s[k] !== undefined) { st[k] = s[k]; any = true; }
+      if (any) row.push(st);
       struct.push(row);
     }
     for (let i = 0; i < n; i++) {
       const f = W.floor[i];
       if (f) floor.push([i, f.type, f.decon ? 1 : 0]);
-      if (W.zone[i] === 1) stock.push(i); else if (W.zone[i] === 2) farm.push(i);
+      if (W.zone[i] === 1) stock.push(i); else if (W.zone[i] === 2) farm.push(i); else if (W.zone[i] === 3) pasture.push(i);
     }
     for (const i of W.itemSet) { const it = W.items[i]; items.push([i, it.type, it.n, +(it.age || 0).toFixed(2)]); }
     const filter = [];
@@ -5841,7 +6262,7 @@ const Save = {
       tick: Game.tickCount,
       speed: Game.lastSpeed,
       cam: { x: Camera.x, y: Camera.y, zoom: Camera.zoom },
-      world: { objRemoved, objSet, struct, floor, items, crops, bp, stock, farm, filter },
+      world: { objRemoved, objSet, struct, floor, items, crops, bp, stock, farm, pasture, filter },
       fire: [...Fire.tiles].map(([i, f]) => [i, +f.t.toFixed(2)]),
       animals: Animals.pack(),
       events: Events.pack(),
@@ -5859,7 +6280,7 @@ const Save = {
       id: c.id, gender: c.gender, first: c.first, last: c.last, look: c.look, trait: c.trait.id, age: c.age,
       x: c.x, y: c.y, dir: c.dir, skills, priorities: c.priorities,
       hunger: c.hunger, energy: c.energy, mood: c.mood, health: c.health, thoughts: c.thoughts,
-      carry: c.carry, breakUntil: c.breakUntil,
+      carry: c.carry, breakUntil: c.breakUntil, warmth: c.warmth, coat: c.coat, bow: c.bow,
     };
   },
   unpackColonist(d) {
@@ -5877,6 +6298,8 @@ const Save = {
     c.thoughts = d.thoughts || [];
     c.carry = d.carry || null;
     c.breakUntil = d.breakUntil || 0;
+    c.warmth = d.warmth !== undefined ? d.warmth : 100;
+    c.coat = !!d.coat; c.bow = !!d.bow;
     if (!World.canWalk(c.tx, c.ty)) { const p = World.nearestWalkable(c.tx, c.ty); c.x = p.x + 0.5; c.y = p.y + 0.5; }
     return c;
   },
@@ -5899,13 +6322,14 @@ const Save = {
     W.items.fill(null); W.struct.fill(null); W.floor.fill(null); W.crops.fill(null); W.bp.fill(null); W.zone.fill(0);
     for (const [i, type, decon, owner, dir, st] of w.struct) { if (BUILD[type]) W.makeStruct(i, type, dir || 0, Object.assign({ decon: !!decon, owner }, st)); }
     for (const [i, type, decon] of w.floor) W.floor[i] = { type, decon: !!decon };
-    for (const [i, type, k, age] of w.items) W.items[i] = { type, n: k, age: age || 0 };
+    for (const [i, type, k, age] of w.items) if (ITEMS[type]) W.items[i] = { type, n: k, age: age || 0 };
     W.filter.fill(0);
     for (const [i, m] of w.filter || []) W.filter[i] = m;
     for (const [i, g] of w.crops) W.crops[i] = { g };
     for (const [i, type, del, dir] of w.bp) { if (BUILD[type]) { W.placeBlueprint(i, type, dir || 0); W.bp[i].del = del || {}; } }
     for (const i of w.stock) W.zone[i] = 1;
     for (const i of w.farm) W.zone[i] = 2;
+    for (const i of w.pasture || []) W.zone[i] = 3;
     W.rebuildIndex();
 
     Game.res.clear(); Game.itemRes.clear();
@@ -5995,6 +6419,7 @@ const Game = {
   over: false,
   stats: null,
   alerts: [],            // poslední upozornění {msg, kind, x, y, t}
+  shots: [],             // krátké čáry výstřelů pro vykreslení
   speed: 1,
   lastSpeed: 1,
   autoFast: false,       // zrychlit čas, když všichni kolonisté spí
@@ -6019,6 +6444,7 @@ const Game = {
     this.tickCount = 0; this.pending = null;
     this.over = false;
     this.alerts = [];
+    this.shots = [];
     this.stats = { built: 0, chopped: 0, mined: 0, cooked: 0, harvested: 0, cropsEaten: 0, joined: 0, crafted: 0, machined: 0, deaths: [] };
     Fire.reset(); Animals.reset(); Power.reset(); Research.reset();
     this.colonists = createColonists(World.start);
@@ -6127,11 +6553,15 @@ const Game = {
     if (this.alerts.length > 40) this.alerts.shift();
     UI.toast(msg, kind);
   },
+  /** Výstřel / hod – jen vizuální stopa. */
+  shot(x0, y0, x1, y1, col) { if (this.shots.length < 40) this.shots.push({ x0, y0, x1, y1, col, t: 7 }); },
   /** Smrt kolonisty; když zemřou všichni, hra končí. */
   killColonist(c, cause) {
     if (c.dead) return;
     c.dead = true;
     c.endJob();
+    if (c.coat) World.dropItem(c.tx, c.ty, 'coat', 1);
+    if (c.bow) World.dropItem(c.tx, c.ty, 'bow', 1);
     for (const i of World.structBy.bed || []) if (World.struct[i].owner === c.id) World.struct[i].owner = -1;
     this.colonists = this.colonists.filter(q => q !== c);
     this.stats.deaths.push({ name: c.name, day: TimeSys.day, cause });
@@ -6201,7 +6631,7 @@ const Game = {
     this.tickCount++;
     const hourBefore = TimeSys.lastHour;
     TimeSys.tick();
-    if (TimeSys.lastHour !== hourBefore) { Events.hourly(); Save.auto(); }   // jednou za herní hodinu
+    if (TimeSys.lastHour !== hourBefore) { Events.hourly(); Animals.hourly(); Save.auto(); }   // jednou za herní hodinu
     Weather.tick();
     if (this.tickCount % 30 === 0) {
       const hours = 30 * Config.HOURS_PER_TICK;

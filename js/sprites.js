@@ -286,6 +286,47 @@ const Sprites = (() => {
         set(cx + x, cy + y, c);
       }
     }));
+    S.items.meat = outline(paint(16, 16, (set) => {
+      for (let y = 4; y < 13; y++) for (let x = 3; x < 13; x++) {
+        const dx = (x - 7.5) / 5, dy = (y - 8) / 4.2;
+        if (dx * dx + dy * dy > 1) continue;
+        set(x, y, dx + dy < -0.5 ? [226, 110, 100] : dx + dy > 0.6 ? [150, 50, 50] : [196, 76, 70]);
+      }
+      set(6, 7, [240, 200, 190]); set(7, 8, [240, 200, 190]); set(9, 9, [240, 200, 190]);
+      set(12, 11, [236, 230, 214]); set(13, 12, [236, 230, 214]); set(14, 12, [250, 246, 236]); set(13, 13, [250, 246, 236]);
+    }));
+    S.items.egg = outline(paint(16, 16, (set) => {
+      for (const [cx, cy] of [[5, 10], [10, 10], [8, 6]]) for (let y = -3; y <= 3; y++) for (let x = -2; x <= 2; x++) {
+        if ((x * x) / 5.5 + (y * y) / 9.5 > 1) continue;
+        set(cx + x, cy + y, x + y < -1 ? [252, 248, 236] : x + y > 2 ? [206, 190, 160] : [236, 224, 200]);
+      }
+    }));
+    S.items.wool = outline(paint(16, 16, (set) => {
+      for (const [cx, cy, r] of [[6, 9, 3.6], [10, 9, 3.4], [8, 6, 3.2]]) for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) {
+        if (Math.hypot(x, y) > r) continue;
+        set(cx + x, cy + y, H(cx + x, cy + y, 41) > 0.7 ? [206, 204, 196] : x + y < 0 ? [250, 248, 242] : [228, 226, 218]);
+      }
+    }));
+    S.items.leather = outline(paint(16, 16, (set) => {
+      for (let y = 3; y < 13; y++) for (let x = 3; x < 13; x++) {
+        if ((x < 5 || x > 10) && (y > 5 && y < 10)) continue;
+        set(x, y, (x + y) % 5 === 0 ? [124, 80, 44] : y < 5 ? [176, 122, 72] : [150, 100, 58]);
+      }
+    }));
+    S.items.coat = outline(paint(16, 16, (set, get, rect) => {
+      rect(5, 3, 6, 10, [120, 86, 150]); rect(2, 4, 3, 6, [104, 72, 132]); rect(11, 4, 3, 6, [104, 72, 132]);
+      rect(5, 3, 6, 1, [236, 232, 220]); rect(7, 4, 2, 9, [96, 66, 122]); rect(5, 12, 6, 1, [236, 232, 220]);
+    }));
+    S.items.bow = outline(paint(16, 16, (set, get, rect) => {
+      for (let k = 0; k < 11; k++) set(2 + k, 8, [150, 104, 60]);
+      rect(11, 3, 2, 11, [110, 72, 40]); set(10, 3, [110, 72, 40]); set(10, 13, [110, 72, 40]);
+      for (let k = 0; k < 5; k++) { set(9 - k * 0, 4 + k, [220, 220, 220], 0); }
+      for (let y = 4; y < 13; y++) set(9, y, [226, 226, 226]);
+      set(2, 8, [200, 204, 214]); set(1, 8, [200, 204, 214]);
+    }));
+    S.items.ammo = outline(paint(16, 16, (set, get, rect) => {
+      for (const x of [3, 7, 11]) { rect(x, 6, 2, 7, [196, 150, 60]); rect(x, 4, 2, 2, [150, 156, 168]); set(x, 6, [236, 200, 110]); }
+    }));
     S.items.meal = outline(paint(16, 16, (set) => {
       for (let y = 7; y < 14; y++) for (let x = 2; x < 14; x++) {
         const dx = (x - 7.5) / 6, dy = (y - 8) / 6;
@@ -392,6 +433,20 @@ const Sprites = (() => {
       rect(7, 7, 2, 3, [232, 200, 96]); set(7, 9, [150, 120, 50]);
       rect(2, 13, 12, 1, [96, 62, 34]);
     }));
+    // ----- chov a krejčí -----
+    S.build.tailor = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 7, 14, 5, [150, 104, 60]); rect(1, 7, 14, 1, [186, 138, 86]); rect(1, 11, 14, 1, [100, 66, 38]);
+      rect(2, 12, 2, 4, [100, 66, 38]); rect(12, 12, 2, 4, [100, 66, 38]);
+      rect(3, 4, 5, 3, [120, 86, 150]); rect(3, 4, 5, 1, [150, 116, 180]);
+      rect(10, 3, 3, 4, [236, 232, 220]); set(11, 2, [200, 60, 60]);
+    }));
+    const hut = (roof, roofD, wall) => outline(paint(16, 16, (set, get, rect) => {
+      rect(2, 8, 12, 8, wall); rect(2, 15, 12, 1, U.shade(wall, 0.7));
+      for (let y = 1; y < 9; y++) { const w = 1 + y; rect(8 - w, y, w * 2, 1, y & 1 ? roof : roofD); }
+      rect(6, 11, 4, 5, [50, 36, 28]);
+    }));
+    S.build.coop = hut([196, 150, 80], [170, 124, 60], [176, 126, 74]);
+    S.build.sheepfold = hut([150, 90, 70], [124, 70, 54], [200, 190, 170]);
     // ----- dílny, stroje, energie -----
     const metal = [120, 126, 138], metalL = [176, 184, 196], metalD = [72, 78, 90];
     const wood = [150, 104, 60], woodL = [186, 138, 86], woodD = [100, 66, 38];
@@ -633,22 +688,36 @@ const Sprites = (() => {
 
   // ============ ZVĚŘ ============
   function makeAnimals() {
-    const boar = (f, flip) => outline(paint(16, 12, (set, get, rect) => {
+    // čtyřnožec z boku; `o` = barvy a rozměry
+    const quad = (o) => (f, flip) => outline(paint(16, 14, (set, get, rect) => {
       const X = (x) => flip ? 15 - x : x;
-      const body = [96, 72, 56], dark = [70, 52, 40], light = [124, 96, 76];
-      for (let y = 3; y < 9; y++) for (let x = 3; x < 13; x++) {
-        const dx = (x - 7.5) / 5, dy = (y - 5.5) / 3;
-        if (dx * dx + dy * dy <= 1) set(X(x), y, y < 5 ? light : y > 6 ? dark : body);
+      const R = (x, y, w, h, c) => { for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) set(X(xx), yy, c); };
+      const [bx, by, bw, bh] = o.body;
+      for (let y = by; y < by + bh; y++) for (let x = bx; x < bx + bw; x++) {
+        const dx = (x - bx - bw / 2 + 0.5) / (bw / 2), dy = (y - by - bh / 2 + 0.5) / (bh / 2);
+        if (dx * dx + dy * dy <= 1.05) set(X(x), y, dy < -0.3 ? o.light : dy > 0.4 ? o.dark : (o.fluff && H(x, y, 9) > 0.7 ? o.dark : o.col));
       }
-      for (let x = 4; x < 11; x += 2) set(X(x), 2, dark);          // štětiny
-      rect(flip ? 12 : 1, 5, 3, 3, body); set(X(1), 6, [200, 150, 140]); set(X(0), 6, [200, 150, 140]);
-      set(X(2), 5, [20, 16, 16]); set(X(1), 8, [236, 230, 214]);    // oko, kel
-      const l1 = f ? 0 : 1, l2 = f ? 1 : 0;
-      rect(X(4) - (flip ? 0 : 0), 9, 1, 2 - l1, dark); rect(X(6), 9, 1, 2 - l2, dark);
-      rect(X(9), 9, 1, 2 - l2, dark); rect(X(11), 9, 1, 2 - l1, dark);
-      set(X(13), 4, dark);
+      R(o.head[0], o.head[1], o.head[2], o.head[3], o.headCol || o.col);
+      set(X(o.head[0] + 1), o.head[1] + 1, [20, 16, 16]);
+      if (o.extra) o.extra(set, X, R);
+      const l1 = f ? 0 : 1, l2 = f ? 1 : 0, ly = by + bh - 1, ll = o.leg;
+      R(bx + 1, ly, 1, ll - l1, o.dark); R(bx + 3, ly, 1, ll - l2, o.dark);
+      R(bx + bw - 4, ly, 1, ll - l2, o.dark); R(bx + bw - 2, ly, 1, ll - l1, o.dark);
     }));
-    S.animals = { boar: { left: [boar(0, false), boar(1, false)], right: [boar(0, true), boar(1, true)] } };
+    const mk = (fn) => ({ left: [fn(0, false), fn(1, false)], right: [fn(0, true), fn(1, true)] });
+    const boar = quad({ body: [3, 4, 10, 6], head: [1, 6, 3, 3], col: [96, 72, 56], dark: [70, 52, 40], light: [124, 96, 76], leg: 3,
+      extra: (set, X) => { for (let x = 4; x < 11; x += 2) set(X(x), 3, [70, 52, 40]); set(X(0), 7, [200, 150, 140]); set(X(1), 9, [236, 230, 214]); } });
+    const deer = quad({ body: [4, 4, 9, 5], head: [1, 2, 3, 3], col: [168, 118, 70], dark: [124, 84, 48], light: [198, 150, 98], leg: 5,
+      extra: (set, X, R) => { R(3, 4, 2, 2, [168, 118, 70]); set(X(2), 0, [226, 214, 190]); set(X(3), 1, [226, 214, 190]); set(X(1), 1, [226, 214, 190]); set(X(13), 5, [240, 236, 226]); } });
+    const sheep = quad({ body: [3, 3, 10, 7], head: [1, 5, 3, 3], col: [236, 234, 226], dark: [200, 198, 190], light: [252, 250, 244], headCol: [70, 62, 58], leg: 3, fluff: true });
+    const chicken = (f, flip) => outline(paint(10, 10, (set, get, rect) => {
+      const X = (x) => flip ? 9 - x : x;
+      for (let y = 3; y < 8; y++) for (let x = 2; x < 8; x++) if (Math.hypot(x - 4.5, (y - 5) * 1.2) < 3) set(X(x), y, y < 5 ? [250, 246, 236] : [222, 214, 196]);
+      set(X(2), 2, [250, 246, 236]); set(X(2), 3, [250, 246, 236]); set(X(1), 3, [236, 170, 60]); set(X(2), 1, [210, 50, 50]);
+      set(X(8), 3, [222, 214, 196]); set(X(8), 4, [222, 214, 196]);
+      set(X(4), 8 + (f ? 0 : 0), [236, 170, 60]); if (!f) set(X(5), 8, [236, 170, 60]); else set(X(3), 8, [236, 170, 60]);
+    }));
+    S.animals = { boar: mk(boar), deer: mk(deer), sheep: mk(sheep), chicken: mk(chicken) };
   }
 
   // ============ IKONY NÁSTROJŮ ============
@@ -690,6 +759,15 @@ const Sprites = (() => {
     }));
     I.priorities = outline(paint(16, 16, (set, get, rect) => {
       for (let r = 0; r < 4; r++) { rect(2, 2 + r * 3, 3, 2, [230, 200, 90]); rect(6, 2 + r * 3, 8, 2, [220, 220, 220]); }
+    }));
+    I.hunt = outline(paint(16, 16, (set, get, rect) => {
+      for (let k = 0; k < 12; k++) { set(2 + k, 13 - k, [150, 100, 56]); set(3 + k, 13 - k, [120, 80, 44]); }
+      rect(11, 1, 4, 2, [210, 214, 224]); rect(13, 1, 2, 4, [210, 214, 224]); set(12, 3, [210, 214, 224]);
+    }));
+    I.zone_pasture = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 11, 14, 4, [96, 150, 70]); rect(1, 11, 14, 1, [126, 180, 90]);
+      for (const x of [2, 7, 12]) { rect(x, 5, 2, 8, [176, 126, 74]); set(x, 5, [206, 158, 100]); }
+      rect(1, 7, 14, 1, [150, 104, 60]); rect(1, 10, 14, 1, [150, 104, 60]);
     }));
     I.research_btn = outline(paint(16, 16, (set, get, rect) => {
       rect(6, 1, 4, 5, [200, 220, 236]); rect(5, 1, 6, 1, [150, 170, 190]);

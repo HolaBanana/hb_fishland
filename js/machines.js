@@ -28,19 +28,27 @@ const Machines = {
     const m = this.def(s);
     if (!m) return 0;
     let cap = 0;
-    if (m.recipe && m.recipe.in[type]) cap = m.recipe.in[type] * 6;
+    for (const r of this.recipes(m)) if (r.in[type]) cap = Math.max(cap, r.in[type] * 6);
+    if (cap) { /* vstup některého receptu */ }
     else if (m.fuel === type) cap = 12;
     else if (m.ammo === type) cap = 30;
     return Math.max(0, cap - (s.inv[type] || 0));
   },
-  canCraft(s) {
-    const r = this.def(s).recipe;
+  /** Všechny recepty stavby (hlavní + alternativní). */
+  recipes(m) { return m.recipe ? [m.recipe].concat(m.alts || []) : []; },
+  hasInputs(s, r) {
     for (const k in r.in) if ((s.inv[k] || 0) < r.in[k]) return false;
     return true;
   },
+  /** Recept, na který má stavba v zásobníku dost surovin (nebo null). */
+  readyRecipe(s) {
+    for (const r of this.recipes(this.def(s))) if (this.hasInputs(s, r)) return r;
+    return null;
+  },
+  canCraft(s) { return !!this.readyRecipe(s); },
   /** Dokončí jeden výrobní cyklus: spotřebuje vstupy, vrátí výstupy. */
   craft(s) {
-    const r = this.def(s).recipe;
+    const r = this.readyRecipe(s);
     for (const k in r.in) s.inv[k] -= r.in[k];
     s.prog = 0;
     return r.out;
@@ -94,7 +102,7 @@ const Machines = {
   /** Stroj si vezme vstupy ze sousedních políček (země, sklad, truhla, pás). */
   pull(s) {
     const m = this.def(s);
-    const want = m.recipe ? Object.keys(m.recipe.in) : m.fuel ? [m.fuel] : m.ammo ? [m.ammo] : [];
+    const want = m.recipe ? [].concat(...this.recipes(m).map(r => Object.keys(r.in))) : m.fuel ? [m.fuel] : m.ammo ? [m.ammo] : [];
     if (!want.length) return;
     for (const q of this.sides(s)) {
       const it = World.items[q];

@@ -11,6 +11,7 @@ const Game = {
   over: false,
   stats: null,
   alerts: [],            // poslední upozornění {msg, kind, x, y, t}
+  shots: [],             // krátké čáry výstřelů pro vykreslení
   speed: 1,
   lastSpeed: 1,
   autoFast: false,       // zrychlit čas, když všichni kolonisté spí
@@ -35,6 +36,7 @@ const Game = {
     this.tickCount = 0; this.pending = null;
     this.over = false;
     this.alerts = [];
+    this.shots = [];
     this.stats = { built: 0, chopped: 0, mined: 0, cooked: 0, harvested: 0, cropsEaten: 0, joined: 0, crafted: 0, machined: 0, deaths: [] };
     Fire.reset(); Animals.reset(); Power.reset(); Research.reset();
     this.colonists = createColonists(World.start);
@@ -143,11 +145,15 @@ const Game = {
     if (this.alerts.length > 40) this.alerts.shift();
     UI.toast(msg, kind);
   },
+  /** Výstřel / hod – jen vizuální stopa. */
+  shot(x0, y0, x1, y1, col) { if (this.shots.length < 40) this.shots.push({ x0, y0, x1, y1, col, t: 7 }); },
   /** Smrt kolonisty; když zemřou všichni, hra končí. */
   killColonist(c, cause) {
     if (c.dead) return;
     c.dead = true;
     c.endJob();
+    if (c.coat) World.dropItem(c.tx, c.ty, 'coat', 1);
+    if (c.bow) World.dropItem(c.tx, c.ty, 'bow', 1);
     for (const i of World.structBy.bed || []) if (World.struct[i].owner === c.id) World.struct[i].owner = -1;
     this.colonists = this.colonists.filter(q => q !== c);
     this.stats.deaths.push({ name: c.name, day: TimeSys.day, cause });
@@ -217,7 +223,7 @@ const Game = {
     this.tickCount++;
     const hourBefore = TimeSys.lastHour;
     TimeSys.tick();
-    if (TimeSys.lastHour !== hourBefore) { Events.hourly(); Save.auto(); }   // jednou za herní hodinu
+    if (TimeSys.lastHour !== hourBefore) { Events.hourly(); Animals.hourly(); Save.auto(); }   // jednou za herní hodinu
     Weather.tick();
     if (this.tickCount % 30 === 0) {
       const hours = 30 * Config.HOURS_PER_TICK;
