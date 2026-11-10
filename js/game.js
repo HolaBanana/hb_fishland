@@ -6,7 +6,11 @@ const Game = {
   colonists: [],
   res: new Map(),        // klíč → id kolonisty (rezervace cílů)
   itemRes: new Map(),    // index políčka → rezervovaný počet kusů
-  resType: { wood: 0, stone: 0, iron: 0, food: 0, meal: 0 }, // rezervováno celkem podle typu
+  resType: {},           // rezervováno celkem podle typu suroviny
+  nextId: 4,
+  over: false,
+  stats: null,
+  alerts: [],            // poslední upozornění {msg, kind, x, y, t}
   speed: 1,
   lastSpeed: 1,
   autoFast: false,       // zrychlit čas, když všichni kolonisté spí
@@ -26,10 +30,16 @@ const Game = {
     Pathfinder.init(World.w, World.h);
     Sprites.buildTerrain();
     this.res.clear(); this.itemRes.clear(); this.notified.clear();
-    for (const k in this.resType) this.resType[k] = 0;
+    for (const k of ITEM_KEYS) this.resType[k] = 0;
     this.tickCount = 0; this.pending = null;
+    this.over = false;
+    this.alerts = [];
+    this.stats = { built: 0, chopped: 0, mined: 0, cooked: 0, harvested: 0, cropsEaten: 0, joined: 0, deaths: [] };
+    Fire.reset(); Animals.reset();
     this.colonists = createColonists(World.start);
+    this.nextId = this.colonists.length;
     Weather.reset();
+    Events.reset();
     Camera.zoom = Config.ZOOM_DEFAULT;
     Camera.centerTile(World.start.x, World.start.y + 1);
   },
@@ -126,6 +136,30 @@ const Game = {
     }
     return false;
   },
+  /** Upozornění vázané na místo na mapě (ukládá se do seznamu upozornění). */
+  alert(msg, kind, x, y) {
+    this.alerts.push({ msg, kind, x, y, t: TimeSys.minutes });
+    if (this.alerts.length > 40) this.alerts.shift();
+    UI.toast(msg, kind);
+  },
+  /** Smrt kolonisty; když zemřou všichni, hra končí. */
+  killColonist(c, cause) {
+    if (c.dead) return;
+    c.dead = true;
+    c.endJob();
+    for (const i of World.structBy.bed || []) if (World.struct[i].owner === c.id) World.struct[i].owner = -1;
+    this.colonists = this.colonists.filter(q => q !== c);
+    this.stats.deaths.push({ name: c.name, day: TimeSys.day, cause });
+    if (this.selected && this.selected.c === c) this.select(null);
+    if (Camera.follow === c) Camera.follow = null;
+    UI.buildColonistBar();
+    this.alert(`${c.name} zemřel/a ${cause}.`, 'warn', c.tx, c.ty);
+    if (!this.colonists.length) {
+      this.over = true;
+      Save.clear();
+      UI.gameOver();
+    }
+  },
   /** Upozornění nejvýše jednou za `cooldownMin` herních minut. */
   notifyOnce(key, msg, kind, cooldownMin) {
     const last = this.notified.get(key);
@@ -175,10 +209,15 @@ const Game = {
     this.tickCount++;
     const hourBefore = TimeSys.lastHour;
     TimeSys.tick();
-    if (TimeSys.lastHour !== hourBefore) Save.auto();   // jednou za herní hodinu
+    if (TimeSys.lastHour !== hourBefore) { Events.hourly(); Save.auto(); }   // jednou za herní hodinu
     Weather.tick();
-    if (this.tickCount % 30 === 0) World.update(30 * Config.HOURS_PER_TICK);
-    for (const c of this.colonists) c.tick();
+    if (this.tickCount % 30 === 0) {
+      const hours = 30 * Config.HOURS_PER_TICK;
+      World.update(hours);
+      Fire.update(hours);
+    }
+    Animals.tick();
+    for (const c of this.colonists.slice()) c.tick();
   },
 
   start() {
@@ -189,7 +228,7 @@ const Game = {
       last = now;
       this.acc += dt * Config.TPS * this.effectiveSpeed();
       let steps = 0;
-      while (this.acc >= 1 && steps < 16) { this.tick(); this.acc -= 1; steps++; }
+      while (this.acc >= 1 && steps < 16 && !this.over) { this.tick(); this.acc -= 1; steps++; }
       if (steps >= 16) this.acc = 0;
       Input.update(dt);
       Camera.update();

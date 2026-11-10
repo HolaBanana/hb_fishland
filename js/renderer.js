@@ -14,7 +14,7 @@ const Renderer = {
     this.splash = [];
     this.clouds = [];
     for (let k = 0; k < 14; k++) {
-      this.clouds.push({ x: U.rand() * World.w * 16, y: U.rand() * World.h * 16, r: U.range(90, 220), s: U.range(0.6, 1.2) });
+      this.clouds.push({ x: Math.random() * World.w * 16, y: Math.random() * World.h * 16, r: 90 + Math.random() * 130, s: 0.6 + Math.random() * 0.6 });
     }
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -68,6 +68,11 @@ const Renderer = {
     const dx0 = this.X(sx), dy0 = this.Y(sy);
     ctx.drawImage(Sprites.terrain, sx, sy, sw, sh, dx0, dy0, this.X(sx + sw) - dx0, this.Y(sy + sh) - dy0);
 
+    // sněhová pokrývka (jen venku – podlahy a místnosti se kreslí přes ni)
+    if (Weather.snow > 0.02) {
+      ctx.fillStyle = `rgba(236,242,250,${Weather.snow * 0.5})`;
+      ctx.fillRect(dx0, dy0, this.X(sx + sw) - dx0, this.Y(sy + sh) - dy0);
+    }
     this.drawGround(tx0, ty0, tx1, ty1);
     this.drawRows(tx0, ty0, tx1, ty1);
     this.drawOverlays(tx0, ty0, tx1, ty1);
@@ -186,9 +191,30 @@ const Renderer = {
         const bp = World.bp[i];
         if (bp && BUILD[bp.type].layer === 'struct') this.drawBlueprint(bp, wx, wy);
       }
+      for (const a of Animals.list) if (Math.floor(a.y) === y) this.drawAnimal(a);
       const cs = byRow.get(y);
       if (cs) { cs.sort((a, b) => a.y - b.y); for (const c of cs) this.drawColonist(c); }
     }
+    // plameny požárů
+    for (const i of Fire.tiles.keys()) {
+      const x = i % W, y = (i / W) | 0;
+      if (x < tx0 || x > tx1 || y < ty0 || y > ty1) continue;
+      this.drawFlame(x * TS + 5, y * TS + 12); this.drawFlame(x * TS + 11, y * TS + 9); this.drawFlame(x * TS + 8, y * TS + 14);
+    }
+  },
+
+  drawAnimal(a) {
+    const TS = Config.TILE, ctx = this.ctx;
+    const spr = Sprites.animals[a.type];
+    if (!spr) return;
+    const wx = a.x * TS, wy = a.y * TS;
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(this.X(wx), this.Y(wy + 4), 6 * this.z, 2 * this.z, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const moving = a.state !== 'eat';
+    const f = moving ? Math.floor(a.animT * 3) % 2 : (Math.sin(this.time * 6) > 0 ? 0 : 1);
+    this.img(spr[a.dir === 'right' ? 'right' : 'left'][f], wx - 8, wy - 7 + (moving ? 0 : 1), 16, 12);
   },
 
   drawObj(o, i, x, y, wx, wy) {
@@ -408,6 +434,7 @@ const Renderer = {
       const def = s && BUILD[s.type];
       if (def && def.light) out.push({ x: (i % World.w) + 0.5, y: ((i / World.w) | 0) + 0.5, r: def.light, fire: s.type === 'campfire' });
     }
+    for (const i of Fire.tiles.keys()) out.push({ x: (i % World.w) + 0.5, y: ((i / World.w) | 0) + 0.5, r: 4.5, fire: true });
     return out;
   },
   drawLighting() {
@@ -470,7 +497,18 @@ const Renderer = {
     const want = Math.floor(Weather.rain * (W * Hh) / (this.dpr * this.dpr) / 2600);
     while (this.rain.length < want) this.rain.push(this.newDrop(true));
     if (this.rain.length > want) this.rain.length = want;
-    if (this.rain.length) {
+    const snowing = TimeSys.temp() < 0;
+    if (this.rain.length && snowing) {
+      // sníh: pomalé bílé vločky
+      ctx.fillStyle = 'rgba(245,248,255,0.85)';
+      const sz = Math.max(2, 2 * this.dpr);
+      for (const d of this.rain) {
+        d.y += d.v * 0.16 * simDt * this.dpr;
+        d.x += (Weather.wind * 60 + Math.sin(d.y * 0.02 + d.l) * 20) * simDt * this.dpr;
+        if (d.y > this.cv.height + 10) { Object.assign(d, this.newDrop(false)); }
+        ctx.fillRect(d.x, d.y, sz, sz);
+      }
+    } else if (this.rain.length) {
       const wind = Weather.wind * 0.35;
       ctx.strokeStyle = 'rgba(180,200,240,0.5)';
       ctx.lineWidth = Math.max(1, this.dpr);
@@ -521,8 +559,9 @@ const Renderer = {
   },
   newDrop(anyY) {
     const W = this.cv.width, Hh = this.cv.height;
-    const y = anyY ? U.rand() * Hh : -20;
-    return { x: U.rand() * (W + 200) - 100, y, v: U.range(700, 1000), l: U.range(8, 14) * this.dpr, end: y + U.range(80, Hh) };
+    const y = anyY ? Math.random() * Hh : -20;
+    const R = Math.random;   // vykreslování nesmí spotřebovávat herní náhodu
+    return { x: R() * (W + 200) - 100, y, v: 700 + R() * 300, l: (8 + R() * 6) * this.dpr, end: y + 80 + R() * (Hh - 80) };
   },
 
   // ---------- Jmenovky ----------

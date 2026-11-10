@@ -14,10 +14,31 @@ const TimeSys = {
     if (h !== this.lastHour) {
       this.lastHour = h;
       if (h === 20) UI.toast('Stmívá se. Kolonisté se brzy půjdou vyspat.', 'info');
-      if (h === 6) UI.toast(`Svítá – začíná ${this.day}. den.`, 'info');
+      if (h === 6) {
+        UI.toast(`Svítá – začíná ${this.day}. den.`, 'info');
+        if ((this.day - 1) % Config.SEASON_DAYS === 0 && this.day > 1) {
+          const msg = ['Přišlo jaro. Pole se dají znovu osít.', 'Začíná léto.', 'Začíná podzim. Zima přijde za ' + Config.SEASON_DAYS + ' dny – udělej zásoby jídla!', 'Přišla zima! Plodiny nerostou a keře neplodí.'][this.season];
+          UI.toast(msg, this.season === 3 ? 'warn' : 'good');
+        }
+      }
     }
   },
   get day() { return Math.floor(this.minutes / 1440) + 1; },
+  /** 0 jaro, 1 léto, 2 podzim, 3 zima */
+  get season() { return Math.floor((this.day - 1) / Config.SEASON_DAYS) % 4; },
+  get year() { return Math.floor((this.day - 1) / (Config.SEASON_DAYS * 4)) + 1; },
+  get seasonName() { return SEASONS[this.season]; },
+  /** Venkovní teplota ve °C: roční průběh + denní cyklus + počasí. */
+  temp() {
+    // opěrné body: začátek a střed každého období (jaro, léto, podzim, zima)
+    const K = [7, 13, 20, 25, 16, 9, 0, -7];
+    const yearLen = Config.SEASON_DAYS * 4 * 1440;
+    const p = ((this.minutes - 7 * 60) % yearLen + yearLen) % yearLen / yearLen * 8;
+    const a = Math.floor(p) % 8, f = p - Math.floor(p);
+    const base = K[a] + (K[(a + 1) % 8] - K[a]) * f;
+    const daily = 4 * Math.sin((this.hour - 9) / 24 * Math.PI * 2);
+    return base + daily - Weather.rain * 2 - Weather.cloud;
+  },
   get hour() { return (this.minutes % 1440) / 60; },
   isNight() { const h = this.hour; return h >= 22 || h < 6; },
   /** 0 = noc, 1 = plný den */
@@ -45,8 +66,8 @@ const Weather = {
   TYPES: {
     clear:  { name: 'Jasno',   icon: '☀️', rain: 0,   cloud: 0,    fog: 0 },
     cloudy: { name: 'Oblačno', icon: '⛅', rain: 0,   cloud: 0.65, fog: 0 },
-    rain:   { name: 'Déšť',    icon: '🌧️', rain: 0.6, cloud: 0.85, fog: 0.1 },
-    storm:  { name: 'Bouřka',  icon: '⛈️', rain: 1,   cloud: 1,    fog: 0.15 },
+    rain:   { name: 'Déšť',    snowName: 'Sněžení', icon: '🌧️', rain: 0.6, cloud: 0.85, fog: 0.1 },
+    storm:  { name: 'Bouřka',  snowName: 'Vánice', icon: '⛈️', rain: 1,   cloud: 1,    fog: 0.15 },
     fog:    { name: 'Mlha',    icon: '🌫️', rain: 0,   cloud: 0.3,  fog: 1 },
   },
   NEXT: {
@@ -59,10 +80,11 @@ const Weather = {
   cur: 'clear', until: 0,
   rain: 0, cloud: 0, fog: 0,
   wind: 0.4, flash: 0,
+  snow: 0,             // sněhová pokrývka 0..1
 
   reset() {
     this.cur = 'clear'; this.until = TimeSys.minutes + 60 * U.range(5, 9);
-    this.rain = 0; this.cloud = 0; this.fog = 0; this.flash = 0;
+    this.rain = 0; this.cloud = 0; this.fog = 0; this.flash = 0; this.snow = 0;
   },
   get def() { return this.TYPES[this.cur]; },
   tick() {
@@ -74,10 +96,14 @@ const Weather = {
     this.wind += (U.rand() - 0.5) * 0.004;
     this.wind = U.clamp(this.wind, -0.9, 0.9);
     if (this.flash > 0) this.flash = Math.max(0, this.flash - 0.06);
-    if (this.cur === 'storm' && this.rain > 0.6 && U.chance(0.0025)) {
+    // sníh: padá při srážkách pod nulou, taje nad nulou
+    const t = TimeSys.temp();
+    if (t < 0) this.snow = Math.min(1, this.snow + (0.00004 + this.rain * 0.0012));
+    else if (t > 1) this.snow = Math.max(0, this.snow - 0.0002 * (t - 1));
+    if (this.cur === 'storm' && this.rain > 0.6 && t > 2 && U.chance(0.0025)) {
       this.flash = 1;
-      // blesk může zapálit / zničit osamělý strom
-      if (U.chance(0.25)) this.strike();
+      // blesk může zapálit strom → požár
+      if (U.chance(0.3)) this.strike();
     }
   },
   strike() {
@@ -85,9 +111,9 @@ const Weather = {
       const x = U.int(0, World.w - 1), y = U.int(0, World.h - 1), i = World.idx(x, y);
       const o = World.obj[i];
       if (o && o.type === 'tree') {
-        World.removeObj(i);
-        World.dropItem(x, y, 'wood', 3);
-        UI.toast('Blesk udeřil do stromu!', 'warn');
+        Fire.ignite(i);
+        const near = Math.hypot(x - World.start.x, y - World.start.y) < 40;
+        if (near) Game.alert('Blesk zapálil strom poblíž kolonie! Kolonisté běží hasit.', 'warn', x, y);
         return;
       }
     }
@@ -103,7 +129,8 @@ const Weather = {
     this.cur = next;
     this.until = TimeSys.minutes + 60 * U.range(3, 10);
     if (next !== prev) {
-      const msg = { rain: 'Začíná pršet. Úroda poroste rychleji.', storm: 'Blíží se bouřka!', fog: 'Krajinu zahalila mlha.', clear: 'Vyjasnilo se.', cloudy: 'Zatáhlo se.' }[next];
+      const cold = TimeSys.temp() < 0;
+      const msg = { rain: cold ? 'Začíná sněžit.' : 'Začíná pršet. Úroda poroste rychleji.', storm: cold ? 'Přichází vánice!' : 'Blíží se bouřka!', fog: 'Krajinu zahalila mlha.', clear: 'Vyjasnilo se.', cloudy: 'Zatáhlo se.' }[next];
       UI.toast(msg, next === 'storm' ? 'warn' : 'info');
     }
   },

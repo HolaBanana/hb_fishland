@@ -18,7 +18,12 @@ const Config = {
   TREE_GROW_PER_HOUR: 0.004,
   SPEEDS: [0, 1, 2, 3, 4],
   AUTO_FAST_SPEED: 10,     // rychlost, když všichni spí (volitelné)
-  BATCH_RADIUS: 8,         // dosah pro hromadné zásobování sousedních plánů
+  BATCH_RADIUS: 8,
+  SEASON_DAYS: 4,          // délka ročního období ve dnech (rok = 16 dní)
+  SPOIL_HOURS: { food: 72, meal: 120 },   // trvanlivost potravin venku (herní hodiny)
+  CHEST_STACK: 300,        // kapacita truhly
+  ROOM_MAX: 300,           // největší prostor, který se ještě zastřeší
+  MAX_COLONISTS: 8,         // dosah pro hromadné zásobování sousedních plánů
 };
 Config.HOURS_PER_TICK = Config.MIN_PER_TICK / 60;
 
@@ -43,6 +48,12 @@ const ITEMS = {
   meal:  { name: 'Jídlo', desc: 'uvařené pokrmy' },
 };
 const ITEM_ORDER = ['wood', 'stone', 'iron', 'food', 'meal'];
+const ITEM_KEYS = Object.keys(ITEMS);
+const ITEM_BIT = {};
+ITEM_KEYS.forEach((k, n) => { ITEM_BIT[k] = 1 << n; });
+const FILTER_CUSTOM = 0x8000;   // příznak „sklad má vlastní filtr“
+
+const SEASONS = ['Jaro', 'Léto', 'Podzim', 'Zima'];
 
 // Přírodní objekty
 const OBJECTS = {
@@ -54,13 +65,16 @@ const OBJECTS = {
 
 // Stavby
 const BUILD = {
-  wall_wood:   { name: 'Dřevěná zeď',     layer: 'struct', cost: { wood: 5 },  work: 80,  blocks: true, wall: true, mode: 'perimeter', hint: 'Táhni pro obdélník zdí (místnost) nebo rovnou čáru.' },
+  wall_wood:   { name: 'Dřevěná zeď',     layer: 'struct', cost: { wood: 5 },  work: 80,  blocks: true, wall: true, burns: true, mode: 'perimeter', hint: 'Táhni pro obdélník zdí (místnost) nebo rovnou čáru.' },
   wall_stone:  { name: 'Kamenná zeď',     layer: 'struct', cost: { stone: 5 }, work: 150, blocks: true, wall: true, mode: 'perimeter', hint: 'Pevná kamenná zeď. Táhni pro obdélník nebo čáru.' },
-  door:        { name: 'Dveře',           layer: 'struct', cost: { wood: 6 },  work: 90,  door: true, walkCost: 1.3, mode: 'single', hint: 'Klepni na místo ve zdi, kde mají být dveře.' },
-  floor_wood:  { name: 'Dřevěná podlaha', layer: 'floor',  cost: { wood: 2 },  work: 30,  mode: 'rect', hint: 'Táhni pro vyplnění plochy podlahou. Po podlaze se chodí rychleji.' },
+  door:        { name: 'Dveře',           layer: 'struct', cost: { wood: 6 },  work: 90,  door: true, burns: true, walkCost: 1.3, mode: 'single', hint: 'Klepni na místo ve zdi, kde mají být dveře.' },
+  floor_wood:  { name: 'Dřevěná podlaha', layer: 'floor',  cost: { wood: 2 },  work: 30,  burns: true, mode: 'rect', hint: 'Táhni pro vyplnění plochy podlahou. Po podlaze se chodí rychleji.' },
   floor_stone: { name: 'Kamenná dlažba',  layer: 'floor',  cost: { stone: 2 }, work: 45,  mode: 'rect', hint: 'Táhni pro vyplnění plochy dlažbou.' },
-  bed:         { name: 'Postel',          layer: 'struct', cost: { wood: 15 }, work: 120, walkCost: 1.4, mode: 'single', hint: 'Klepni pro umístění postele. Spánek v posteli zlepšuje náladu.' },
-  campfire:    { name: 'Ohniště',         layer: 'struct', cost: { wood: 10 }, work: 70,  blocks: true, light: 7, mode: 'single', hint: 'Na ohništi se vaří jídlo. V noci svítí a hřeje.' },
+  bed:         { name: 'Postel',          layer: 'struct', cost: { wood: 15 }, work: 120, burns: true, walkCost: 1.4, mode: 'single', hint: 'Klepni pro umístění postele. Spánek v posteli zlepšuje náladu.' },
+  table:       { name: 'Stůl',            layer: 'struct', cost: { wood: 12 }, work: 90,  blocks: true, burns: true, mode: 'single', hint: 'Jídlo u stolu (na židli vedle něj) zlepšuje náladu.' },
+  chair:       { name: 'Židle',           layer: 'struct', cost: { wood: 5 },  work: 45,  burns: true, walkCost: 1.3, mode: 'single', hint: 'Postav ji těsně vedle stolu. Kolonisté si k jídlu sednou.' },
+  chest:       { name: 'Truhla',          layer: 'struct', cost: { wood: 20 }, work: 100, burns: true, storage: true, walkCost: 1.5, mode: 'single', hint: 'Pojme 300 kusů jedné suroviny a potraviny se v ní kazí pomaleji. Klepnutím na ni nastavíš filtr.' },
+  campfire:    { name: 'Ohniště',         layer: 'struct', cost: { wood: 10 }, work: 70,  blocks: true, light: 7, heat: 16, mode: 'single', hint: 'Na ohništi se vaří jídlo. V noci svítí a v uzavřené místnosti ji vytopí.' },
   lamp:        { name: 'Železná lampa',   layer: 'struct', cost: { iron: 3, wood: 2 }, work: 60, blocks: true, light: 6, mode: 'single', hint: 'Osvětluje okolí v noci.' },
 };
 

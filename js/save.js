@@ -31,7 +31,9 @@ const Save = {
       if (f) floor.push([i, f.type, f.decon ? 1 : 0]);
       if (W.zone[i] === 1) stock.push(i); else if (W.zone[i] === 2) farm.push(i);
     }
-    for (const i of W.itemSet) { const it = W.items[i]; items.push([i, it.type, it.n]); }
+    for (const i of W.itemSet) { const it = W.items[i]; items.push([i, it.type, it.n, +(it.age || 0).toFixed(2)]); }
+    const filter = [];
+    for (const i of W.stockTiles) if (W.filter[i]) filter.push([i, W.filter[i]]);
     for (const i of W.cropSet) crops.push([i, +W.crops[i].g.toFixed(4)]);
     for (const i of W.bpSet) bp.push([i, W.bp[i].type, W.bp[i].del]);
     // pořadí množin závisí na historii → seřadit, ať je uložení deterministické
@@ -43,12 +45,17 @@ const Save = {
       savedAt: Date.now(),
       label: `Den ${TimeSys.day}, ${TimeSys.timeStr()}`,
       time: { minutes: TimeSys.minutes, lastHour: TimeSys.lastHour },
-      weather: { cur: Weather.cur, until: Weather.until, rain: Weather.rain, cloud: Weather.cloud, fog: Weather.fog, wind: Weather.wind },
+      weather: { cur: Weather.cur, until: Weather.until, rain: Weather.rain, cloud: Weather.cloud, fog: Weather.fog, wind: Weather.wind, snow: Weather.snow },
       rng: U.getState(),
       tick: Game.tickCount,
       speed: Game.lastSpeed,
       cam: { x: Camera.x, y: Camera.y, zoom: Camera.zoom },
-      world: { objRemoved, objSet, struct, floor, items, crops, bp, stock, farm },
+      world: { objRemoved, objSet, struct, floor, items, crops, bp, stock, farm, filter },
+      fire: [...Fire.tiles].map(([i, f]) => [i, +f.t.toFixed(2)]),
+      animals: Animals.pack(),
+      events: Events.pack(),
+      stats: Game.stats,
+      nextId: Game.nextId,
       colonists: Game.colonists.map(c => this.packColonist(c)),
     };
   },
@@ -59,7 +66,7 @@ const Save = {
     return {
       id: c.id, gender: c.gender, first: c.first, last: c.last, look: c.look, trait: c.trait.id, age: c.age,
       x: c.x, y: c.y, dir: c.dir, skills, priorities: c.priorities,
-      hunger: c.hunger, energy: c.energy, mood: c.mood, thoughts: c.thoughts,
+      hunger: c.hunger, energy: c.energy, mood: c.mood, health: c.health, thoughts: c.thoughts,
       carry: c.carry, breakUntil: c.breakUntil,
     };
   },
@@ -74,6 +81,7 @@ const Save = {
     for (const w of WORK_TYPES) if (d.priorities[w.id] !== undefined) c.priorities[w.id] = d.priorities[w.id];
     c.x = d.x; c.y = d.y; c.dir = d.dir || 'down';
     c.hunger = d.hunger; c.energy = d.energy; c.mood = d.mood; c.moodTarget = d.mood;
+    c.health = d.health !== undefined ? d.health : 100;
     c.thoughts = d.thoughts || [];
     c.carry = d.carry || null;
     c.breakUntil = d.breakUntil || 0;
@@ -99,7 +107,9 @@ const Save = {
     W.items.fill(null); W.struct.fill(null); W.floor.fill(null); W.crops.fill(null); W.bp.fill(null); W.zone.fill(0);
     for (const [i, type, decon, owner] of w.struct) W.struct[i] = { type, decon: !!decon, owner };
     for (const [i, type, decon] of w.floor) W.floor[i] = { type, decon: !!decon };
-    for (const [i, type, k] of w.items) W.items[i] = { type, n: k };
+    for (const [i, type, k, age] of w.items) W.items[i] = { type, n: k, age: age || 0 };
+    W.filter.fill(0);
+    for (const [i, m] of w.filter || []) W.filter[i] = m;
     for (const [i, g] of w.crops) W.crops[i] = { g };
     for (const [i, type, del] of w.bp) W.bp[i] = { type, del: del || {} };
     for (const i of w.stock) W.zone[i] = 1;
@@ -109,6 +119,12 @@ const Save = {
     Game.res.clear(); Game.itemRes.clear();
     for (const k in Game.resType) Game.resType[k] = 0;
     Game.colonists = d.colonists.map(c => this.unpackColonist(c));
+    Game.nextId = d.nextId !== undefined ? d.nextId : Math.max(-1, ...Game.colonists.map(c => c.id)) + 1;
+    if (d.stats) Game.stats = Object.assign(Game.stats, d.stats);
+    Fire.reset();
+    for (const [i, t] of d.fire || []) Fire.tiles.set(i, { t });
+    Animals.unpack(d.animals);
+    Events.unpack(d.events);
     Game.tickCount = d.tick || 0;
     Game.lastSpeed = d.speed || 1;
     Object.assign(Weather, d.weather);
@@ -121,6 +137,7 @@ const Save = {
     return !!d && d.v === this.VERSION && Number.isFinite(d.seed) && d.world && Array.isArray(d.colonists) && d.time;
   },
   store() {
+    if (Game.over || !Game.colonists.length) return false;
     try {
       localStorage.setItem(this.KEY, JSON.stringify(this.serialize()));
       this.lastError = null;

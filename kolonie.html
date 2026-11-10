@@ -51,6 +51,14 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 #clock { display: flex; gap: 8px; align-items: center; padding: 2px 10px; font-size: 20px; white-space: nowrap; }
 #dayLabel { color: var(--accent); }
 #weatherLabel { color: var(--muted); }
+#seasonLabel.s0 { color: #9fe08a; }
+#seasonLabel.s1 { color: #ffd35a; }
+#seasonLabel.s2 { color: #e9955a; }
+#seasonLabel.s3 { color: #a9d4ff; }
+.filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 4px; margin: 4px 0; }
+.fbtn { display: flex; align-items: center; gap: 4px; padding: 4px; font-size: 16px; background: var(--panel2); border: 2px solid #3d3122; border-radius: 3px; opacity: 0.45; min-height: 36px; }
+.fbtn.on { opacity: 1; border-color: var(--good); }
+.fbtn img { width: 20px; height: 20px; }
 #resources { display: flex; gap: 2px; align-items: center; padding: 2px 6px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 #resources::-webkit-scrollbar { display: none; }
 .res { display: flex; align-items: center; gap: 3px; padding: 0 6px; font-size: 20px; white-space: nowrap; }
@@ -76,8 +84,9 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 .portrait.sm { width: 26px; height: 22px; vertical-align: middle; margin-right: 6px; }
 .cinfo { flex: 1; min-width: 0; }
 .cname { font-size: 18px; line-height: 16px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mini { height: 4px; background: #0e0b08; margin-top: 2px; }
+.mini { height: 3px; background: #0e0b08; margin-top: 2px; }
 .mini i { display: block; height: 100%; }
+.b-health { background: #d9534f; }
 .b-food { background: #e3a23b; }
 .b-energy { background: #58a6ff; }
 
@@ -262,6 +271,9 @@ body.fast:not(.paused) #fastBadge { display: block; }
   .tab span { display: none; }
   #weatherLabel { display: none; }
 }
+@media (max-width: 760px) {
+  #clock { flex-wrap: wrap; row-gap: 0; max-width: 58%; line-height: 18px; }
+}
 
 </style>
 </head>
@@ -274,6 +286,7 @@ body.fast:not(.paused) #fastBadge { display: block; }
       <span id="dayLabel">Den 1</span>
       <span id="timeLabel">07:00</span>
       <span id="weatherLabel"></span>
+      <span id="seasonLabel"></span>
     </div>
     <div id="resources" class="panel"></div>
     <div id="speed" class="panel"></div>
@@ -404,7 +417,12 @@ const Config = {
   TREE_GROW_PER_HOUR: 0.004,
   SPEEDS: [0, 1, 2, 3, 4],
   AUTO_FAST_SPEED: 10,     // rychlost, když všichni spí (volitelné)
-  BATCH_RADIUS: 8,         // dosah pro hromadné zásobování sousedních plánů
+  BATCH_RADIUS: 8,
+  SEASON_DAYS: 4,          // délka ročního období ve dnech (rok = 16 dní)
+  SPOIL_HOURS: { food: 72, meal: 120 },   // trvanlivost potravin venku (herní hodiny)
+  CHEST_STACK: 300,        // kapacita truhly
+  ROOM_MAX: 300,           // největší prostor, který se ještě zastřeší
+  MAX_COLONISTS: 8,         // dosah pro hromadné zásobování sousedních plánů
 };
 Config.HOURS_PER_TICK = Config.MIN_PER_TICK / 60;
 
@@ -429,6 +447,12 @@ const ITEMS = {
   meal:  { name: 'Jídlo', desc: 'uvařené pokrmy' },
 };
 const ITEM_ORDER = ['wood', 'stone', 'iron', 'food', 'meal'];
+const ITEM_KEYS = Object.keys(ITEMS);
+const ITEM_BIT = {};
+ITEM_KEYS.forEach((k, n) => { ITEM_BIT[k] = 1 << n; });
+const FILTER_CUSTOM = 0x8000;   // příznak „sklad má vlastní filtr“
+
+const SEASONS = ['Jaro', 'Léto', 'Podzim', 'Zima'];
 
 // Přírodní objekty
 const OBJECTS = {
@@ -440,13 +464,16 @@ const OBJECTS = {
 
 // Stavby
 const BUILD = {
-  wall_wood:   { name: 'Dřevěná zeď',     layer: 'struct', cost: { wood: 5 },  work: 80,  blocks: true, wall: true, mode: 'perimeter', hint: 'Táhni pro obdélník zdí (místnost) nebo rovnou čáru.' },
+  wall_wood:   { name: 'Dřevěná zeď',     layer: 'struct', cost: { wood: 5 },  work: 80,  blocks: true, wall: true, burns: true, mode: 'perimeter', hint: 'Táhni pro obdélník zdí (místnost) nebo rovnou čáru.' },
   wall_stone:  { name: 'Kamenná zeď',     layer: 'struct', cost: { stone: 5 }, work: 150, blocks: true, wall: true, mode: 'perimeter', hint: 'Pevná kamenná zeď. Táhni pro obdélník nebo čáru.' },
-  door:        { name: 'Dveře',           layer: 'struct', cost: { wood: 6 },  work: 90,  door: true, walkCost: 1.3, mode: 'single', hint: 'Klepni na místo ve zdi, kde mají být dveře.' },
-  floor_wood:  { name: 'Dřevěná podlaha', layer: 'floor',  cost: { wood: 2 },  work: 30,  mode: 'rect', hint: 'Táhni pro vyplnění plochy podlahou. Po podlaze se chodí rychleji.' },
+  door:        { name: 'Dveře',           layer: 'struct', cost: { wood: 6 },  work: 90,  door: true, burns: true, walkCost: 1.3, mode: 'single', hint: 'Klepni na místo ve zdi, kde mají být dveře.' },
+  floor_wood:  { name: 'Dřevěná podlaha', layer: 'floor',  cost: { wood: 2 },  work: 30,  burns: true, mode: 'rect', hint: 'Táhni pro vyplnění plochy podlahou. Po podlaze se chodí rychleji.' },
   floor_stone: { name: 'Kamenná dlažba',  layer: 'floor',  cost: { stone: 2 }, work: 45,  mode: 'rect', hint: 'Táhni pro vyplnění plochy dlažbou.' },
-  bed:         { name: 'Postel',          layer: 'struct', cost: { wood: 15 }, work: 120, walkCost: 1.4, mode: 'single', hint: 'Klepni pro umístění postele. Spánek v posteli zlepšuje náladu.' },
-  campfire:    { name: 'Ohniště',         layer: 'struct', cost: { wood: 10 }, work: 70,  blocks: true, light: 7, mode: 'single', hint: 'Na ohništi se vaří jídlo. V noci svítí a hřeje.' },
+  bed:         { name: 'Postel',          layer: 'struct', cost: { wood: 15 }, work: 120, burns: true, walkCost: 1.4, mode: 'single', hint: 'Klepni pro umístění postele. Spánek v posteli zlepšuje náladu.' },
+  table:       { name: 'Stůl',            layer: 'struct', cost: { wood: 12 }, work: 90,  blocks: true, burns: true, mode: 'single', hint: 'Jídlo u stolu (na židli vedle něj) zlepšuje náladu.' },
+  chair:       { name: 'Židle',           layer: 'struct', cost: { wood: 5 },  work: 45,  burns: true, walkCost: 1.3, mode: 'single', hint: 'Postav ji těsně vedle stolu. Kolonisté si k jídlu sednou.' },
+  chest:       { name: 'Truhla',          layer: 'struct', cost: { wood: 20 }, work: 100, burns: true, storage: true, walkCost: 1.5, mode: 'single', hint: 'Pojme 300 kusů jedné suroviny a potraviny se v ní kazí pomaleji. Klepnutím na ni nastavíš filtr.' },
+  campfire:    { name: 'Ohniště',         layer: 'struct', cost: { wood: 10 }, work: 70,  blocks: true, light: 7, heat: 16, mode: 'single', hint: 'Na ohništi se vaří jídlo. V noci svítí a v uzavřené místnosti ji vytopí.' },
   lamp:        { name: 'Železná lampa',   layer: 'struct', cost: { iron: 3, wood: 2 }, work: 60, blocks: true, light: 6, mode: 'single', hint: 'Osvětluje okolí v noci.' },
 };
 
@@ -497,10 +524,15 @@ const World = {
     this.obj = new Array(n).fill(null);     // {type, des, size, berries, regrow, variant}
     this.struct = new Array(n).fill(null);  // {type, decon, owner}
     this.floor = new Array(n).fill(null);   // {type, decon}
-    this.items = new Array(n).fill(null);   // {type, n}
+    this.items = new Array(n).fill(null);   // {type, n, age} – age = stáří v hodinách (kažení)
     this.crops = new Array(n).fill(null);   // {g}
     this.bp = new Array(n).fill(null);      // {type, del:{}}
     this.zone = new Uint8Array(n);          // 0 nic, 1 sklad, 2 pole
+    this.filter = new Uint16Array(n);       // filtr surovin skladu (0 = vše)
+    this.roof = new Uint8Array(n);          // 1 = pod střechou (uzavřená místnost)
+    this.roomId = new Int16Array(n);        // index do rooms, -1 = venku
+    this.rooms = [];
+    this.roomsDirty = true;
     this.walk = new Uint8Array(n);
     this.cost = new Float32Array(n);
     this.variant = new Uint8Array(n);
@@ -515,7 +547,8 @@ const World = {
   resetIndex() {
     this.itemSet = new Set();
     this.looseSet = new Set();      // hromádky mimo sklad (k odnesení)
-    this.counts = { wood: 0, stone: 0, iron: 0, food: 0, meal: 0 };
+    this.counts = {};
+    for (const k of ITEM_KEYS) this.counts[k] = 0;
     this.itemVer = 0;               // zvýší se při každé změně předmětů / zón
     this.bpSet = new Set();
     this.desSet = new Set();        // všechna označení (pro vykreslení)
@@ -552,8 +585,10 @@ const World = {
       this.recalc(i);
     }
     this.rebuildZones();
+    this.roomsDirty = true;
   },
   indexStruct(i, type, add) {
+    this.roomsDirty = true;
     if (add) {
       this.structSet.add(i);
       (this.structBy[type] || (this.structBy[type] = new Set())).add(i);
@@ -726,6 +761,7 @@ const World = {
     if (o.des) this.des[o.des].delete(i);
     this.bushSet.delete(i);
     this.recalc(i);
+    if (OBJECTS[o.type].blocks) this.roomsDirty = true;
   },
   designate(i, des) {
     const o = this.obj[i];
@@ -739,8 +775,37 @@ const World = {
   canHoldItem(i) {
     return this.walk[i] && !this.struct[i] && !(this.bp[i] && BUILD[this.bp[i].type].layer === 'struct');
   },
+  isChest(i) { const s = this.struct[i]; return !!s && !!BUILD[s.type].storage; },
+  /** Sklad = zóna skladu nebo truhla. */
+  isStock(i) { return this.zone[i] === 1 || this.isChest(i); },
+  /** Smí se sem cíleně uložit (sklad / truhla)? */
+  canStore(i) { return this.isChest(i) ? !this.struct[i].decon : this.canHoldItem(i); },
+  stackCap(i) { return this.isChest(i) ? Config.CHEST_STACK : Config.STACK; },
+  /** Povoluje filtr skladu na políčku daný druh suroviny? */
+  allowed(i, type) { const f = this.filter[i]; return !(f & FILTER_CUSTOM) || !!(f & ITEM_BIT[type]); },
+  /** Leží hromádka „volně“ (mimo sklad nebo ve skladu, kam nepatří)? */
+  isLoose(i) { const it = this.items[i]; return !!it && (!this.isStock(i) || !this.allowed(i, it.type)); },
+  /** Souvislý sklad (zóna) nebo jedna truhla, do které políčko patří. */
+  stockRegion(i) {
+    if (this.isChest(i)) return [i];
+    if (this.zone[i] !== 1) return [];
+    const out = [i], seen = new Set([i]);
+    for (let h = 0; h < out.length; h++) {
+      const c = out[h], x = c % this.w, y = (c / this.w) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (!this.inb(x + dx, y + dy)) continue;
+        const q = this.idx(x + dx, y + dy);
+        if (!seen.has(q) && this.zone[q] === 1) { seen.add(q); out.push(q); }
+      }
+    }
+    return out;
+  },
+  setFilter(tiles, mask) {
+    for (const i of tiles) this.filter[i] = mask;
+    this.rebuildZones();
+  },
   /** Položí předměty na políčko nebo do okolí. Vrací nepoložený zbytek. */
-  dropItem(x, y, type, n) {
+  dropItem(x, y, type, n, age = 0) {
     if (n <= 0) return 0;
     const seen = new Set();
     const q = [[x, y]];
@@ -751,8 +816,8 @@ const World = {
       const i = this.idx(cx, cy);
       if (this.canHoldItem(i)) {
         const it = this.items[i];
-        if (!it) { const k = Math.min(n, Config.STACK); this.addAt(i, type, k); n -= k; }
-        else if (it.type === type && it.n < Config.STACK) { const k = Math.min(n, Config.STACK - it.n); this.addAt(i, type, k); n -= k; }
+        if (!it) { const k = Math.min(n, Config.STACK); this.addAt(i, type, k, age); n -= k; }
+        else if (it.type === type && it.n < Config.STACK) { const k = Math.min(n, Config.STACK - it.n); this.addAt(i, type, k, age); n -= k; }
       }
       if (q.length > 400) continue;
       if (!this.walk[i] && !(cx === x && cy === y)) continue;
@@ -768,13 +833,13 @@ const World = {
     return n;
   },
   /** Jediné místo, kde předměty přibývají → počty a seznamy zůstávají aktuální. */
-  addAt(i, type, k) {
+  addAt(i, type, k, age = 0) {
     const it = this.items[i];
-    if (it) it.n += k;
+    if (it) { it.age = (it.age * it.n + age * k) / (it.n + k); it.n += k; }   // stáří = vážený průměr
     else {
-      this.items[i] = { type, n: k };
+      this.items[i] = { type, n: k, age };
       this.itemSet.add(i);
-      if (this.zone[i] !== 1) this.looseSet.add(i);
+      if (this.isLoose(i)) this.looseSet.add(i);
     }
     this.counts[type] += k;
     this.itemVer++;
@@ -790,12 +855,12 @@ const World = {
     return k;
   },
   /** Přidá do konkrétního políčka (sklad); vrací zbytek. */
-  putItem(i, type, n) {
-    if (!this.canHoldItem(i)) return n;
+  putItem(i, type, n, age = 0) {
+    if (!this.canStore(i)) return n;
     const it = this.items[i];
     if (it && it.type !== type) return n;
-    const k = Math.min(n, Config.STACK - (it ? it.n : 0));
-    if (k > 0) this.addAt(i, type, k);
+    const k = Math.min(n, this.stackCap(i) - (it ? it.n : 0));
+    if (k > 0) this.addAt(i, type, k, age);
     return n - k;
   },
   /** Průběžně udržované počty surovin (bez procházení mapy). */
@@ -805,11 +870,11 @@ const World = {
   rebuildZones() {
     this.stockTiles = []; this.farmTiles = [];
     for (let i = 0; i < this.n; i++) {
-      if (this.zone[i] === 1) this.stockTiles.push(i);
-      else if (this.zone[i] === 2) this.farmTiles.push(i);
+      if (this.isStock(i)) this.stockTiles.push(i);
+      else { if (this.filter[i]) this.filter[i] = 0; if (this.zone[i] === 2) this.farmTiles.push(i); }
     }
     this.looseSet = new Set();
-    for (const i of this.itemSet) if (this.zone[i] !== 1) this.looseSet.add(i);
+    for (const i of this.itemSet) if (this.isLoose(i)) this.looseSet.add(i);
     this.emptyFarm = new Set();
     for (const i of this.farmTiles) if (!this.crops[i]) this.emptyFarm.add(i);
     this.itemVer++;
@@ -872,7 +937,8 @@ const World = {
       this.recalc(i);
       // odsunout předměty z políčka
       const it = this.items[i];
-      if (it) { const t = it.type, k = this.takeItem(i, it.n); this.dropItem(x, y, t, k); }
+      if (it && !def.storage) { const t = it.type, a = it.age, k = this.takeItem(i, it.n); this.dropItem(x, y, t, k, a); }
+      if (def.storage) this.rebuildZones();
     }
     this.recalc(i);
   },
@@ -881,8 +947,7 @@ const World = {
     let def = null;
     if (this.struct[i] && this.struct[i].decon) {
       def = BUILD[this.struct[i].type];
-      this.indexStruct(i, this.struct[i].type, false);
-      this.struct[i] = null;
+      this.destroyStruct(i);
     } else if (this.floor[i] && this.floor[i].decon) {
       def = BUILD[this.floor[i].type];
       this.floor[i] = null;
@@ -894,6 +959,21 @@ const World = {
       if (back > 0) this.dropItem(x, y, m, back);
     }
   },
+  /** Odstraní stavbu bez náhrady (bourání, požár). Obsah truhly vysype ven. */
+  destroyStruct(i) {
+    const s = this.struct[i];
+    if (!s) return;
+    const def = BUILD[s.type];
+    this.indexStruct(i, s.type, false);
+    this.struct[i] = null;
+    this.deconSet.delete(i);
+    this.recalc(i);
+    if (def.storage) {
+      const it = this.items[i], [x, y] = this.xy(i);
+      if (it) { const t = it.type, a = it.age, k = this.takeItem(i, it.n); this.dropItem(x, y, t, k, a); }
+      this.rebuildZones();
+    }
+  },
   deconTarget(i) {
     if (this.struct[i] && this.struct[i].decon) return this.struct[i];
     if (this.floor[i] && this.floor[i].decon) return this.floor[i];
@@ -901,10 +981,106 @@ const World = {
   },
   structsOfType(type) { return this.structBy[type] ? [...this.structBy[type]] : []; },
 
+  // ---------- Místnosti a střecha ----------
+  /**
+   * Flood fill: všechno, co není dosažitelné z okraje mapy přes volná políčka
+   * (zdi, dveře a skály jsou hranice), je uzavřený prostor. Menší uzavřené
+   * prostory se považují za zastřešené místnosti.
+   */
+  computeRooms() {
+    this.roomsDirty = false;
+    const n = this.n, w = this.w, h = this.h;
+    const solid = new Uint8Array(n);   // 1 zeď/skála, 2 dveře
+    for (let i = 0; i < n; i++) {
+      const s = this.struct[i], o = this.obj[i];
+      if (s && BUILD[s.type].wall) solid[i] = 1;
+      else if (s && BUILD[s.type].door) solid[i] = 2;
+      else if (o && OBJECTS[o.type].blocks) solid[i] = 1;
+    }
+    const mark = new Uint8Array(n);    // 1 = venku
+    const q = new Int32Array(n);
+    let head = 0, tail = 0;
+    const push = (i) => { if (!solid[i] && !mark[i]) { mark[i] = 1; q[tail++] = i; } };
+    for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x); }
+    for (let y = 0; y < h; y++) { push(y * w); push(y * w + w - 1); }
+    while (head < tail) {
+      const i = q[head++], x = i % w;
+      if (x > 0) push(i - 1);
+      if (x < w - 1) push(i + 1);
+      if (i >= w) push(i - w);
+      if (i < n - w) push(i + w);
+    }
+    this.roof.fill(0);
+    this.roomId.fill(-1);
+    this.rooms = [];
+    for (let s0 = 0; s0 < n; s0++) {
+      if (solid[s0] || mark[s0]) continue;
+      // nová uzavřená oblast
+      const tiles = [s0];
+      mark[s0] = 2;
+      for (let k = 0; k < tiles.length; k++) {
+        const i = tiles[k], x = i % w;
+        for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+          if (j < 0 || j >= n || solid[j] || mark[j]) continue;
+          mark[j] = 2; tiles.push(j);
+        }
+      }
+      if (tiles.length > Config.ROOM_MAX) continue;
+      const room = { id: this.rooms.length, tiles, beds: [], heat: 0 };
+      for (const i of tiles) {
+        this.roof[i] = 1; this.roomId[i] = room.id;
+        const s = this.struct[i];
+        if (s) {
+          if (s.type === 'bed') room.beds.push(i);
+          if (BUILD[s.type].heat) room.heat += BUILD[s.type].heat;
+        }
+      }
+      this.rooms.push(room);
+    }
+    // dveře sousedící s místností jsou také pod střechou
+    for (let i = 0; i < n; i++) {
+      if (solid[i] !== 2) continue;
+      const x = i % w;
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+        if (j >= 0 && j < n && this.roomId[j] >= 0) { this.roof[i] = 1; break; }
+      }
+    }
+  },
+  roomAt(i) {
+    if (this.roomsDirty) this.computeRooms();
+    const r = this.roomId[i];
+    return r >= 0 ? this.rooms[r] : null;
+  },
+  isRoofed(i) {
+    if (this.roomsDirty) this.computeRooms();
+    return this.roof[i] === 1;
+  },
+  /** Teplota na políčku: venkovní + izolace místnosti + teplo z ohniště. */
+  tempAt(i) {
+    let t = TimeSys.temp();
+    const room = this.roomAt(i);
+    if (room) t += 5 + Math.min(22, room.heat);
+    else {
+      // venku hřeje oheň jen zblízka
+      const x = i % this.w, y = (i / this.w) | 0;
+      for (const f of this.lights) {
+        const s = this.struct[f];
+        if (!s || !BUILD[s.type].heat) continue;
+        if (Math.abs((f % this.w) - x) <= 2 && Math.abs(((f / this.w) | 0) - y) <= 2) { t += 7; break; }
+      }
+    }
+    return t;
+  },
+
   // ---------- Růst ----------
   update(hours) {
+    if (this.roomsDirty) this.computeRooms();
     const light = TimeSys.daylight();
-    const growMul = (0.15 + 0.85 * light) * (1 + Weather.rain * 0.35);
+    const temp = TimeSys.temp(), winter = TimeSys.season === 3;
+    // v zimě a při mrazu plodiny nerostou
+    const warm = winter ? 0 : U.clamp((temp - 1) / 6, 0, 1);
+    const growMul = (0.15 + 0.85 * light) * (1 + Weather.rain * 0.35) * warm;
+    this.spoil(hours, temp);
     let matured = 0;
     for (const i of this.cropSet) {
       const c = this.crops[i];
@@ -916,13 +1092,15 @@ const World = {
     if (matured > 0) Game.notifyOnce('crop', `Úroda dozrála (${matured} polí) – kolonisté ji sklidí.`, 'good', 360);
     for (const i of this.bushSet) {
       const o = this.obj[i];
-      if (o && !o.berries) {
+      if (!o) continue;
+      if (winter) { o.berries = false; o.regrow = Math.max(o.regrow, 6); }   // v zimě keře neplodí
+      else if (!o.berries) {
         o.regrow -= hours * (0.5 + light * 0.5);
         if (o.regrow <= 0) o.berries = true;
       }
     }
     // vzácně vyroste nový stromek
-    if (U.chance(hours * 0.6)) {
+    if (!winter && U.chance(hours * 0.6)) {
       const x = U.int(0, this.w - 1), y = U.int(0, this.h - 1), i = this.idx(x, y);
       const t = this.terrain[i];
       if ((t === T.GRASS || t === T.SOIL) && !this.obj[i] && !this.struct[i] && !this.floor[i] && !this.bp[i] &&
@@ -939,6 +1117,28 @@ const World = {
       const o = this.obj[i];
       if (o && o.type === 'tree' && o.size < 1) o.size = Math.min(1, o.size + hours * Config.TREE_GROW_PER_HOUR);
     }
+  },
+
+  /** Kažení potravin: pomaleji pod střechou a v truhle, výrazně pomaleji v chladu. */
+  spoil(hours, temp) {
+    const cold = temp < 3 ? 0.35 : 1;
+    let lost = 0;
+    for (const i of this.itemSet) {
+      const it = this.items[i];
+      const limit = Config.SPOIL_HOURS[it.type];
+      if (!limit) continue;
+      let rate = cold;
+      if (this.roof[i] || this.isChest(i)) rate *= 0.5;
+      it.age += hours * rate;
+      if (it.age >= limit) lost += this.takeItem(i, it.n);
+    }
+    if (lost > 0) Game.notifyOnce('spoil', `Zkazilo se ${lost} ks potravin. Pod střechou a v truhle vydrží déle.`, 'warn', 120);
+  },
+  /** Čerstvost hromádky 0..1 (1 = čerstvé), nebo -1 pokud se nekazí. */
+  freshness(i) {
+    const it = this.items[i];
+    const limit = it && Config.SPOIL_HOURS[it.type];
+    return limit ? U.clamp(1 - it.age / limit, 0, 1) : -1;
   },
 };
 
@@ -1085,10 +1285,31 @@ const TimeSys = {
     if (h !== this.lastHour) {
       this.lastHour = h;
       if (h === 20) UI.toast('Stmívá se. Kolonisté se brzy půjdou vyspat.', 'info');
-      if (h === 6) UI.toast(`Svítá – začíná ${this.day}. den.`, 'info');
+      if (h === 6) {
+        UI.toast(`Svítá – začíná ${this.day}. den.`, 'info');
+        if ((this.day - 1) % Config.SEASON_DAYS === 0 && this.day > 1) {
+          const msg = ['Přišlo jaro. Pole se dají znovu osít.', 'Začíná léto.', 'Začíná podzim. Zima přijde za ' + Config.SEASON_DAYS + ' dny – udělej zásoby jídla!', 'Přišla zima! Plodiny nerostou a keře neplodí.'][this.season];
+          UI.toast(msg, this.season === 3 ? 'warn' : 'good');
+        }
+      }
     }
   },
   get day() { return Math.floor(this.minutes / 1440) + 1; },
+  /** 0 jaro, 1 léto, 2 podzim, 3 zima */
+  get season() { return Math.floor((this.day - 1) / Config.SEASON_DAYS) % 4; },
+  get year() { return Math.floor((this.day - 1) / (Config.SEASON_DAYS * 4)) + 1; },
+  get seasonName() { return SEASONS[this.season]; },
+  /** Venkovní teplota ve °C: roční průběh + denní cyklus + počasí. */
+  temp() {
+    // opěrné body: začátek a střed každého období (jaro, léto, podzim, zima)
+    const K = [7, 13, 20, 25, 16, 9, 0, -7];
+    const yearLen = Config.SEASON_DAYS * 4 * 1440;
+    const p = ((this.minutes - 7 * 60) % yearLen + yearLen) % yearLen / yearLen * 8;
+    const a = Math.floor(p) % 8, f = p - Math.floor(p);
+    const base = K[a] + (K[(a + 1) % 8] - K[a]) * f;
+    const daily = 4 * Math.sin((this.hour - 9) / 24 * Math.PI * 2);
+    return base + daily - Weather.rain * 2 - Weather.cloud;
+  },
   get hour() { return (this.minutes % 1440) / 60; },
   isNight() { const h = this.hour; return h >= 22 || h < 6; },
   /** 0 = noc, 1 = plný den */
@@ -1116,8 +1337,8 @@ const Weather = {
   TYPES: {
     clear:  { name: 'Jasno',   icon: '☀️', rain: 0,   cloud: 0,    fog: 0 },
     cloudy: { name: 'Oblačno', icon: '⛅', rain: 0,   cloud: 0.65, fog: 0 },
-    rain:   { name: 'Déšť',    icon: '🌧️', rain: 0.6, cloud: 0.85, fog: 0.1 },
-    storm:  { name: 'Bouřka',  icon: '⛈️', rain: 1,   cloud: 1,    fog: 0.15 },
+    rain:   { name: 'Déšť',    snowName: 'Sněžení', icon: '🌧️', rain: 0.6, cloud: 0.85, fog: 0.1 },
+    storm:  { name: 'Bouřka',  snowName: 'Vánice', icon: '⛈️', rain: 1,   cloud: 1,    fog: 0.15 },
     fog:    { name: 'Mlha',    icon: '🌫️', rain: 0,   cloud: 0.3,  fog: 1 },
   },
   NEXT: {
@@ -1130,10 +1351,11 @@ const Weather = {
   cur: 'clear', until: 0,
   rain: 0, cloud: 0, fog: 0,
   wind: 0.4, flash: 0,
+  snow: 0,             // sněhová pokrývka 0..1
 
   reset() {
     this.cur = 'clear'; this.until = TimeSys.minutes + 60 * U.range(5, 9);
-    this.rain = 0; this.cloud = 0; this.fog = 0; this.flash = 0;
+    this.rain = 0; this.cloud = 0; this.fog = 0; this.flash = 0; this.snow = 0;
   },
   get def() { return this.TYPES[this.cur]; },
   tick() {
@@ -1145,10 +1367,14 @@ const Weather = {
     this.wind += (U.rand() - 0.5) * 0.004;
     this.wind = U.clamp(this.wind, -0.9, 0.9);
     if (this.flash > 0) this.flash = Math.max(0, this.flash - 0.06);
-    if (this.cur === 'storm' && this.rain > 0.6 && U.chance(0.0025)) {
+    // sníh: padá při srážkách pod nulou, taje nad nulou
+    const t = TimeSys.temp();
+    if (t < 0) this.snow = Math.min(1, this.snow + (0.00004 + this.rain * 0.0012));
+    else if (t > 1) this.snow = Math.max(0, this.snow - 0.0002 * (t - 1));
+    if (this.cur === 'storm' && this.rain > 0.6 && t > 2 && U.chance(0.0025)) {
       this.flash = 1;
-      // blesk může zapálit / zničit osamělý strom
-      if (U.chance(0.25)) this.strike();
+      // blesk může zapálit strom → požár
+      if (U.chance(0.3)) this.strike();
     }
   },
   strike() {
@@ -1156,9 +1382,9 @@ const Weather = {
       const x = U.int(0, World.w - 1), y = U.int(0, World.h - 1), i = World.idx(x, y);
       const o = World.obj[i];
       if (o && o.type === 'tree') {
-        World.removeObj(i);
-        World.dropItem(x, y, 'wood', 3);
-        UI.toast('Blesk udeřil do stromu!', 'warn');
+        Fire.ignite(i);
+        const near = Math.hypot(x - World.start.x, y - World.start.y) < 40;
+        if (near) Game.alert('Blesk zapálil strom poblíž kolonie! Kolonisté běží hasit.', 'warn', x, y);
         return;
       }
     }
@@ -1174,8 +1400,76 @@ const Weather = {
     this.cur = next;
     this.until = TimeSys.minutes + 60 * U.range(3, 10);
     if (next !== prev) {
-      const msg = { rain: 'Začíná pršet. Úroda poroste rychleji.', storm: 'Blíží se bouřka!', fog: 'Krajinu zahalila mlha.', clear: 'Vyjasnilo se.', cloudy: 'Zatáhlo se.' }[next];
+      const cold = TimeSys.temp() < 0;
+      const msg = { rain: cold ? 'Začíná sněžit.' : 'Začíná pršet. Úroda poroste rychleji.', storm: cold ? 'Přichází vánice!' : 'Blíží se bouřka!', fog: 'Krajinu zahalila mlha.', clear: 'Vyjasnilo se.', cloudy: 'Zatáhlo se.' }[next];
       UI.toast(msg, next === 'storm' ? 'warn' : 'info');
+    }
+  },
+};
+
+</script>
+  <script>
+// ===== js/fire.js =====
+'use strict';
+/**
+ * Fire – požáry. Vznikají po zásahu bleskem, šíří se po stromech, keřích
+ * a dřevěných stavbách, déšť je dusí. Kolonisté je hasí (úkol „firefight“).
+ */
+const Fire = {
+  tiles: new Map(),      // index políčka → { t: hodin hoří }
+  BURN_HOURS: 3,
+  SPREAD_PER_HOUR: 0.17,
+
+  reset() { this.tiles.clear(); },
+  flammable(i) {
+    const o = World.obj[i];
+    if (o && (o.type === 'tree' || o.type === 'bush')) return true;
+    const s = World.struct[i];
+    if (s && BUILD[s.type].burns) return true;
+    const f = World.floor[i];
+    return !!(f && BUILD[f.type].burns);
+  },
+  ignite(i) {
+    if (this.tiles.has(i) || !this.flammable(i)) return false;
+    this.tiles.set(i, { t: 0 });
+    return true;
+  },
+  extinguish(i) { this.tiles.delete(i); },
+  burning(i) { return this.tiles.has(i); },
+
+  /** Shoří, co na políčku hořlavého je. */
+  burnDown(i) {
+    const x = i % World.w, y = (i / World.w) | 0;
+    const o = World.obj[i];
+    if (o && (o.type === 'tree' || o.type === 'bush')) World.removeObj(i);
+    const s = World.struct[i];
+    if (s && BUILD[s.type].burns) {
+      Game.alert(`Shořela stavba: ${BUILD[s.type].name.toLowerCase()}.`, 'warn', x, y);
+      World.destroyStruct(i);
+    }
+    const f = World.floor[i];
+    if (f && BUILD[f.type].burns) { World.floor[i] = null; World.deconSet.delete(i); World.recalc(i); }
+    World.removeCrop(i);
+    Game.onTileChanged(x, y);
+  },
+
+  update(hours) {
+    if (!this.tiles.size) return;
+    const rain = Weather.rain, w = World.w;
+    const spread = this.SPREAD_PER_HOUR * hours * Math.max(0, 1 - rain * 1.1) * (Weather.snow > 0.3 ? 0.3 : 1);
+    const add = [];
+    for (const [i, f] of this.tiles) {
+      f.t += hours;
+      if (!this.flammable(i) || U.chance(rain * 1.2 * hours)) { this.tiles.delete(i); continue; }
+      if (f.t >= this.BURN_HOURS) { this.tiles.delete(i); this.burnDown(i); continue; }
+      const x = i % w;
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+        if (j < 0 || j >= World.n || this.tiles.has(j)) continue;
+        if (this.flammable(j) && U.chance(spread)) add.push(j);
+      }
+    }
+    for (const j of add) {
+      if (this.ignite(j) && World.struct[j]) Game.alert('Hoří stavba! Kolonisté běží hasit.', 'warn', j % w, (j / w) | 0);
     }
   },
 };
@@ -1226,9 +1520,9 @@ const Jobs = (() => {
   function findStockDest(type, c) {
     let best = -1, bs = Infinity;
     for (const i of World.stockTiles) {
-      if (!World.canHoldItem(i) || Game.isReserved('d' + i, c)) continue;
+      if (!World.canStore(i) || !World.allowed(i, type) || Game.isReserved('d' + i, c)) continue;
       const it = World.items[i];
-      if (it && (it.type !== type || it.n >= Config.STACK)) continue;
+      if (it && (it.type !== type || it.n >= World.stackCap(i))) continue;
       let s = Math.abs(ix(i) - c.tx) + Math.abs(iy(i) - c.ty);
       if (it) s -= 6; // přednostně doplnit existující hromádku
       if (s < bs) { bs = s; best = i; }
@@ -1242,9 +1536,9 @@ const Jobs = (() => {
     if (spaceCache[type] !== undefined) return spaceCache[type];
     let ok = false;
     for (const i of World.stockTiles) {
-      if (!World.canHoldItem(i)) continue;
+      if (!World.canStore(i) || !World.allowed(i, type)) continue;
       const it = World.items[i];
-      if (!it || (it.type === type && it.n < Config.STACK)) { ok = true; break; }
+      if (!it || (it.type === type && it.n < World.stackCap(i))) { ok = true; break; }
     }
     return (spaceCache[type] = ok);
   }
@@ -1266,6 +1560,38 @@ const Jobs = (() => {
       if (s.owner >= 0 && s.owner !== c.id && Game.colonistById(s.owner)) continue;
       if ((c.unreach.get('b' + i) || 0) > TimeSys.minutes) continue;
       const d = Math.abs(ix(i) - c.tx) + Math.abs(iy(i) - c.ty);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+
+  /** Nejbližší požár v okolí kolonie, který ještě nikdo nehasí. */
+  function findFire(c) {
+    let best = -1, bd = Infinity;
+    const s = World.start, now = TimeSys.minutes;
+    for (const i of Fire.tiles.keys()) {
+      const x = ix(i), y = iy(i);
+      if (Math.abs(x - s.x) > 45 || Math.abs(y - s.y) > 45) continue;
+      if (Game.isReserved('f' + i, c) || (c.unreach.get('f' + i) || 0) > now) continue;
+      const d = Math.abs(x - c.tx) + Math.abs(y - c.ty);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+  /** Volná židle u stolu poblíž. */
+  function findSeat(c) {
+    const chairs = World.structBy.chair, w = World.w;
+    if (!chairs) return -1;
+    let best = -1, bd = 30;
+    for (const i of chairs) {
+      if (World.struct[i].decon || Game.isReserved('s' + i, c)) continue;
+      const x = i % w;
+      let table = false;
+      for (const q of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+        if (q >= 0 && q < World.n && World.struct[q] && World.struct[q].type === 'table') { table = true; break; }
+      }
+      if (!table) continue;
+      const d = Math.abs(x - c.tx) + Math.abs(iy(i) - c.ty);
       if (d < bd) { bd = d; best = i; }
     }
     return best;
@@ -1480,6 +1806,7 @@ const Jobs = (() => {
         if (j.progress >= def.work) {
           World.completeBlueprint(i);
           Game.onTileChanged(bx, by);
+          Game.stats.built++;
           return DONE;
         }
       }
@@ -1545,6 +1872,7 @@ const Jobs = (() => {
         World.removeCrop(i);
         const yieldN = Math.round(6 * (0.85 + c.skills.grow.lvl * 0.04));
         World.dropItem(x, y, 'food', yieldN);
+        Game.stats.harvested += yieldN;
         return DONE;
       }
     },
@@ -1593,6 +1921,7 @@ const Jobs = (() => {
           if (c.carry.n <= 0) {
             c.carry = null;
             World.dropItem(c.tx, c.ty, 'meal', j.made);
+            Game.stats.cooked += j.made;
             return DONE;
           }
         }
@@ -1625,42 +1954,71 @@ const Jobs = (() => {
         if (r === 'fail') return FAIL;
         if (r === 'moving') return;
         if (c.carry) {
-          const left = World.putItem(j.dest, c.carry.type, c.carry.n);
-          if (left > 0) World.dropItem(c.tx, c.ty, c.carry.type, left);
+          const left = World.putItem(j.dest, c.carry.type, c.carry.n, c.carry.age || 0);
+          if (left > 0) World.dropItem(c.tx, c.ty, c.carry.type, left, c.carry.age || 0);
           c.carry = null;
         }
         return DONE;
       }
     },
 
+    /** Jídlo: dojít pro porci, vzít ji a sníst – u stolu, pokud je volná židle. */
     eat(c, j) {
-      const i = j.i;
-      const it = World.items[i];
-      if (!it || (it.type !== 'meal' && it.type !== 'food')) return FAIL;
       if (j.stage === 0) {
+        const it = World.items[j.i];
+        if (!it || (it.type !== 'meal' && it.type !== 'food')) return FAIL;
         c.activity = 'Jde se najíst';
-        const r = walk(c, j, ix(i), iy(i), 0);
+        const r = walk(c, j, ix(j.i), iy(j.i), 0, 'i' + j.i);
         if (r === 'fail') return FAIL;
         if (r === 'moving') return;
-        j.stage = 1;
+        j.food = it.type;
+        if (!c.pickup(j.i, 1, it.type)) return FAIL;
+        j.seat = findSeat(c);
+        if (j.seat >= 0 && !Game.reserve('s' + j.seat, c)) j.seat = -1;
+        j.stage = j.seat >= 0 ? 1 : 2;
       }
-      c.activity = it.type === 'meal' ? 'Jí teplé jídlo' : 'Jí syrové potraviny';
+      if (j.stage === 1) {
+        c.activity = 'Nese si jídlo ke stolu';
+        const r = walk(c, j, ix(j.seat), iy(j.seat), 0, 's' + j.seat);
+        if (r === 'moving') return;
+        if (r === 'fail') j.seat = -1;
+        j.stage = 2;
+      }
+      if (!c.carry || c.carry.type !== j.food) return FAIL;
+      c.activity = (j.food === 'meal' ? 'Jí teplé jídlo' : 'Jí syrové potraviny') + (j.seat >= 0 ? ' u stolu' : '');
       j.progress++;
       c.workFrac = j.progress / 50;
       c.eating = true;
       if (j.progress >= 50) {
-        const type = it.type;
-        Game.releaseItemRes(c, i);
-        if (!World.takeItem(i, 1)) return FAIL;
-        if (type === 'meal') {
+        c.carry = null;
+        if (j.food === 'meal') {
           c.hunger = Math.min(100, c.hunger + 60);
           c.addThought('meal', 'Teplé jídlo', 6, 10);
         } else {
           c.hunger = Math.min(100, c.hunger + 32);
           c.addThought('raw', 'Jedl/a syrové jídlo', -6, 10);
         }
+        if (j.seat >= 0) c.addThought('table', 'Jedl/a u stolu', 4, 10);
         return DONE;
       }
+    },
+
+    /** Hašení požáru – dělá ho každý bez ohledu na priority. */
+    firefight(c, j) {
+      const i = j.i;
+      if (!Fire.burning(i)) return DONE;
+      if (j.stage === 0) {
+        c.activity = 'Běží hasit požár';
+        const r = walk(c, j, ix(i), iy(i), 2, 'f' + i);
+        if (r === 'fail') return FAIL;
+        if (r === 'moving') return;
+        j.stage = 1;
+      }
+      c.activity = 'Hasí požár';
+      c.face(ix(i), iy(i));
+      j.progress += c.work(null);
+      c.workFrac = j.progress / 45;
+      if (j.progress >= 45) { Fire.extinguish(i); return DONE; }
     },
 
     sleep(c, j) {
@@ -1683,8 +2041,12 @@ const Jobs = (() => {
       c.energy = Math.min(100, c.energy + rate);
       const wake = (!TimeSys.isNight() && c.energy >= 97) || c.hunger < 12 || (c.energy >= 100 && TimeSys.hour >= 5 && TimeSys.hour < 22);
       if (wake) {
-        if (j.bed >= 0) c.addThought('sleep', 'Vyspal/a se v posteli', 4, 14);
-        else c.addThought('sleep', 'Spal/a na zemi', -7, 14);
+        if (j.bed >= 0) {
+          const room = World.roomAt(j.bed);
+          if (room && room.beds.length === 1) c.addThought('sleep', 'Vlastní ložnice', 9, 14);
+          else if (room) c.addThought('sleep', 'Vyspal/a se pod střechou', 5, 14);
+          else c.addThought('sleep', 'Postel pod širým nebem', 2, 14);
+        } else c.addThought('sleep', 'Spal/a na zemi', -7, 14);
         return DONE;
       }
     },
@@ -1735,12 +2097,16 @@ const Jobs = (() => {
     if (j.progress < need) return;
     if (o.type === 'tree') {
       World.removeObj(i);
+      Fire.extinguish(i);
+      Game.stats.chopped++;
       World.dropItem(x, y, 'wood', Math.round(10 * o.size + c.skills.chop.lvl * 0.15));
     } else if (o.type === 'rock') {
       World.removeObj(i);
+      Game.stats.mined++;
       World.dropItem(x, y, 'stone', U.int(5, 7));
     } else if (o.type === 'ore') {
       World.removeObj(i);
+      Game.stats.mined++;
       World.dropItem(x, y, 'iron', U.int(4, 6));
       if (U.chance(0.5)) World.dropItem(x, y, 'stone', 2);
     } else if (o.type === 'bush') {
@@ -1752,7 +2118,7 @@ const Jobs = (() => {
     return DONE;
   }
 
-  return { DONE, FAIL, drivers, findWork, findFood, hasFood, findBed, nearestItem, anyItem, candidates };
+  return { DONE, FAIL, drivers, findWork, findFood, hasFood, findBed, findFire, findSeat, nearestItem, anyItem, candidates };
 })();
 
 </script>
@@ -2111,6 +2477,33 @@ const Sprites = (() => {
       rect(2, 9, 12, 1, [80, 116, 186]);
       rect(1, 15, 14, 1, [80, 50, 28]);
     }));
+    S.build.table = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 3, 14, 9, [176, 126, 74]);
+      rect(1, 3, 14, 1, [206, 158, 100]);
+      for (let x = 1; x < 15; x += 4) rect(x, 4, 1, 8, [150, 104, 60]);
+      rect(1, 12, 14, 2, [116, 78, 44]);
+      rect(2, 14, 2, 2, [90, 58, 32]); rect(12, 14, 2, 2, [90, 58, 32]);
+      // miska a hrnek
+      rect(5, 6, 4, 2, [226, 220, 204]); rect(6, 6, 2, 1, [214, 120, 52]);
+      rect(11, 5, 2, 2, [150, 160, 176]);
+    }));
+    S.build.chair = outline(paint(16, 16, (set, get, rect) => {
+      rect(4, 2, 8, 6, [150, 104, 60]);
+      rect(4, 2, 8, 1, [186, 138, 86]);
+      rect(5, 4, 6, 1, [116, 78, 44]);
+      rect(4, 8, 8, 4, [176, 126, 74]);
+      rect(4, 8, 8, 1, [206, 158, 100]);
+      rect(4, 12, 2, 3, [96, 62, 36]); rect(10, 12, 2, 3, [96, 62, 36]);
+    }));
+    S.build.chest = outline(paint(16, 16, (set, get, rect) => {
+      rect(2, 4, 12, 10, [140, 92, 50]);
+      rect(2, 4, 12, 4, [168, 116, 66]);
+      rect(2, 4, 12, 1, [200, 150, 92]);
+      rect(2, 8, 12, 1, [84, 54, 30]);
+      rect(2, 4, 1, 10, [90, 94, 104]); rect(13, 4, 1, 10, [90, 94, 104]);
+      rect(7, 7, 2, 3, [232, 200, 96]); set(7, 9, [150, 120, 50]);
+      rect(2, 13, 12, 1, [96, 62, 34]);
+    }));
     S.build.campfire = paint(16, 16, (set) => {
       for (let a = 0; a < 12; a++) {
         const ang = a / 12 * Math.PI * 2;
@@ -2260,6 +2653,26 @@ const Sprites = (() => {
     return c;
   }
 
+  // ============ ZVĚŘ ============
+  function makeAnimals() {
+    const boar = (f, flip) => outline(paint(16, 12, (set, get, rect) => {
+      const X = (x) => flip ? 15 - x : x;
+      const body = [96, 72, 56], dark = [70, 52, 40], light = [124, 96, 76];
+      for (let y = 3; y < 9; y++) for (let x = 3; x < 13; x++) {
+        const dx = (x - 7.5) / 5, dy = (y - 5.5) / 3;
+        if (dx * dx + dy * dy <= 1) set(X(x), y, y < 5 ? light : y > 6 ? dark : body);
+      }
+      for (let x = 4; x < 11; x += 2) set(X(x), 2, dark);          // štětiny
+      rect(flip ? 12 : 1, 5, 3, 3, body); set(X(1), 6, [200, 150, 140]); set(X(0), 6, [200, 150, 140]);
+      set(X(2), 5, [20, 16, 16]); set(X(1), 8, [236, 230, 214]);    // oko, kel
+      const l1 = f ? 0 : 1, l2 = f ? 1 : 0;
+      rect(X(4) - (flip ? 0 : 0), 9, 1, 2 - l1, dark); rect(X(6), 9, 1, 2 - l2, dark);
+      rect(X(9), 9, 1, 2 - l2, dark); rect(X(11), 9, 1, 2 - l1, dark);
+      set(X(13), 4, dark);
+    }));
+    S.animals = { boar: { left: [boar(0, false), boar(1, false)], right: [boar(0, true), boar(1, true)] } };
+  }
+
   // ============ IKONY NÁSTROJŮ ============
   function makeIcons() {
     const I = S.icons;
@@ -2313,6 +2726,7 @@ const Sprites = (() => {
     makeBuild();
     makeCrops();
     makeDes();
+    makeAnimals();
     makeIcons();
   }
 
@@ -2366,6 +2780,8 @@ class Colonist {
 
     this.hunger = U.range(70, 90);
     this.energy = U.range(75, 95);
+    this.health = 100;
+    this.dead = false;
     this.mood = 60;
     this.moodTarget = 60;
     this.thoughts = [];
@@ -2425,8 +2841,15 @@ class Colonist {
     else if (this.hunger < 25) out.push({ label: 'Má hlad', val: -8 });
     if (this.energy < 10) out.push({ label: 'Vyčerpání', val: -14 });
     else if (this.energy < 25) out.push({ label: 'Únava', val: -6 });
-    if (Weather.rain > 0.3 && !this.sleeping && !World.floor[World.idx(this.tx, this.ty)]) out.push({ label: 'Moknutí v dešti', val: -4 });
-    if (World.floor[World.idx(this.tx, this.ty)]) out.push({ label: 'Pěkné prostředí', val: 2 });
+    const here = World.idx(this.tx, this.ty);
+    const roofed = World.isRoofed(here);
+    const temp = World.tempAt(here);
+    if (this.health < 40) out.push({ label: 'Podlomené zdraví', val: -8 });
+    if (Weather.rain > 0.3 && !roofed) out.push({ label: temp < 0 ? 'Sněží mu/jí za krk' : 'Moknutí v dešti', val: -4 });
+    if (temp < -2) out.push({ label: 'Mrzne', val: -8 });
+    else if (temp < 6) out.push({ label: 'Je mu/jí zima', val: -4 });
+    else if (roofed && TimeSys.temp() < 6) out.push({ label: 'Teplo domova', val: 3 });
+    if (World.floor[here]) out.push({ label: 'Pěkné prostředí', val: 2 });
     if (TimeSys.daylight() < 0.4 && Game.nearLight(this.tx, this.ty)) out.push({ label: 'Teplo a světlo ohně', val: 3 });
     if (Weather.cur === 'clear' && TimeSys.daylight() > 0.8) out.push({ label: 'Krásný den', val: 2 });
     return out;
@@ -2445,11 +2868,24 @@ class Colonist {
     }
   }
 
+  // ---------- Zdraví ----------
+  /** Dlouhé hladovění a vyčerpání ubírají zdraví; sytý a odpočatý kolonista se léčí. */
+  updateHealth(hours) {
+    let d = 0, cause = '';
+    if (this.hunger <= 0) { d -= 4.5 * hours; cause = 'hladem'; }
+    if (this.energy <= 0) { d -= 2 * hours; cause = cause || 'vyčerpáním'; }
+    if (d === 0 && this.hunger > 30 && this.energy > 15) d = (this.sleeping ? 3 : 1.5) * hours;
+    if (d < 0 && this.health >= 50 && this.health + d < 50) Game.alert(`${this.first} je ve vážném stavu – umírá ${cause}!`, 'warn', this.tx, this.ty);
+    this.health = U.clamp(this.health + d, 0, 100);
+    if (this.health <= 0) Game.killColonist(this, cause || 'vyčerpáním');
+  }
+
   // ---------- Pohyb ----------
   speed() {
     let s = 0.105 * (this.trait.move || 1);
     if (this.energy < 10) s *= 0.8;
     if (this.hunger < 5) s *= 0.85;
+    if (this.health < 40) s *= 0.8;
     if (this.carry) s *= 0.92;
     return s;
   }
@@ -2505,15 +2941,19 @@ class Colonist {
     Game.releaseItemRes(this, i);
     const it = World.items[i];
     if (!it || it.type !== type) return false;
-    if (this.carry && this.carry.type !== type) {
-      World.dropItem(this.tx, this.ty, this.carry.type, this.carry.n);
-      this.carry = null;
-    }
+    if (this.carry && this.carry.type !== type) this.dropCarry();
     const have = this.carry ? this.carry.n : 0;
+    const age = it.age || 0;
     const k = World.takeItem(i, Math.min(want, Config.CARRY - have));
     if (k <= 0) return false;
-    if (this.carry) this.carry.n += k; else this.carry = { type, n: k };
+    if (this.carry) { this.carry.age = (this.carry.age * have + age * k) / (have + k); this.carry.n += k; }
+    else this.carry = { type, n: k, age };
     return true;
+  }
+  dropCarry() {
+    if (!this.carry) return;
+    World.dropItem(this.tx, this.ty, this.carry.type, this.carry.n, this.carry.age || 0);
+    this.carry = null;
   }
 
   // ---------- Úkoly ----------
@@ -2526,10 +2966,7 @@ class Colonist {
   }
   endJob() {
     Game.releaseAll(this);
-    if (this.carry) {
-      World.dropItem(this.tx, this.ty, this.carry.type, this.carry.n);
-      this.carry = null;
-    }
+    this.dropCarry();
     this.job = null;
     this.path = null;
     this.sleeping = false;
@@ -2539,6 +2976,11 @@ class Colonist {
   think() {
     const night = TimeSys.isNight();
     if (this.inBreak()) { this.startJob({ type: 'wander' }); return; }
+    // hašení požáru má přednost před vším kromě holého přežití
+    if (Fire.tiles.size && this.hunger > 12 && this.energy > 8) {
+      const f = Jobs.findFire(this);
+      if (f >= 0) { this.startJob({ type: 'firefight', i: f, key: 'f' + f }); return; }
+    }
     if (this.hunger < 30) {
       const f = Jobs.findFood(this);
       if (f >= 0) { this.startJob({ type: 'eat', i: f, key: 'e' + f + '_' + this.id }); return; }
@@ -2561,7 +3003,7 @@ class Colonist {
     // potřeby
     this.hunger = Math.max(0, this.hunger - (100 / 20) * h * (this.trait.hunger || 1) * (this.sleeping ? 0.5 : 1));
     if (!this.sleeping) this.energy = Math.max(0, this.energy - (100 / 21) * h);
-    if (++this.tickN >= 30) { this.tickN = 0; this.updateMood(30 * h); }
+    if (++this.tickN >= 30) { this.tickN = 0; this.updateMood(30 * h); this.updateHealth(30 * h); if (this.dead) return; }
 
     // přerušení kvůli naléhavým potřebám
     if (this.job) {
@@ -2574,7 +3016,7 @@ class Colonist {
       } else if (t === 'wander' && !this.inBreak() && this.job.stage === 2 && this.job.wait > 20 && --this.thinkCd <= 0) {
         // během odpočinku se občas podívat po práci
         this.thinkCd = 20;
-        if (Jobs.findWork(this) || this.hunger < 30 || this.energy < 25 || (TimeSys.isNight() && this.energy < 92)) this.endJob();
+        if (Fire.tiles.size || Jobs.findWork(this) || this.hunger < 30 || this.energy < 25 || (TimeSys.isNight() && this.energy < 92)) this.endJob();
       }
     }
     if (!this.job) {
@@ -2589,40 +3031,221 @@ class Colonist {
   }
 }
 
-/** Vytvoří náhodnou startovní skupinu kolonistů. */
+const LOOKS = {
+  skins: [[241, 200, 160], [224, 172, 128], [198, 140, 98], [150, 100, 66], [245, 214, 180]],
+  hairs: [[60, 40, 26], [30, 24, 20], [164, 104, 50], [214, 178, 96], [120, 70, 40], [190, 80, 40], [90, 90, 96]],
+  shirts: [[180, 60, 56], [58, 108, 170], [70, 140, 80], [196, 150, 52], [130, 80, 160], [60, 150, 150], [200, 110, 60], [150, 150, 160]],
+  pants: [[60, 64, 90], [80, 64, 48], [50, 54, 60], [96, 84, 64]],
+};
+
+/** Vytvoří náhodného kolonistu. `opts` může vnutit pohlaví, specializaci, rys a barvu trička. */
+function makeColonist(id, x, y, usedFirst, opts = {}) {
+  const gender = opts.gender || (U.chance(0.5) ? 'm' : 'f');
+  let first, guard = 0;
+  do { first = U.pick(NAMES[gender].first); } while (usedFirst.has(first) && ++guard < 50);
+  usedFirst.add(first);
+  const last = U.pick(NAMES[gender].last);
+  const keys = Object.keys(SKILLS);
+  const skills = {};
+  for (const s of keys) skills[s] = U.int(0, 5);
+  skills[opts.special || U.pick(keys)] = U.int(8, 12);
+  skills[U.pick(keys)] += U.int(1, 3);
+  const look = {
+    skin: U.pick(LOOKS.skins),
+    hair: U.pick(LOOKS.hairs),
+    shirt: opts.shirt || U.pick(LOOKS.shirts),
+    pants: U.pick(LOOKS.pants),
+    style: gender === 'f' ? U.pick(['long', 'long', 'bun', 'short']) : U.pick(['short', 'short', 'spiky', 'bald', 'beard']),
+  };
+  return new Colonist(id, x, y, { gender, first, last, look, skills, trait: opts.trait || U.pick(TRAITS), age: U.int(19, 52) });
+}
+
+/** Vytvoří náhodnou startovní skupinu kolonistů (každý má jinou specializaci). */
 function createColonists(start) {
   const out = [];
   const usedFirst = new Set();
   const skillKeys = U.shuffle(Object.keys(SKILLS));
   const traits = U.shuffle(TRAITS.slice());
-  const skins = [[241, 200, 160], [224, 172, 128], [198, 140, 98], [150, 100, 66], [245, 214, 180]];
-  const hairs = [[60, 40, 26], [30, 24, 20], [164, 104, 50], [214, 178, 96], [120, 70, 40], [190, 80, 40], [90, 90, 96]];
-  const shirts = [[180, 60, 56], [58, 108, 170], [70, 140, 80], [196, 150, 52], [130, 80, 160], [60, 150, 150], [200, 110, 60]];
-  U.shuffle(shirts);
+  const shirts = U.shuffle(LOOKS.shirts.slice());
   const offsets = [[-1, 0], [1, 0], [0, 1], [2, 1]];
   for (let k = 0; k < 4; k++) {
     const gender = k % 2 === 0 ? (U.chance(0.5) ? 'm' : 'f') : (out[k - 1].gender === 'm' ? 'f' : 'm');
-    let first;
-    do { first = U.pick(NAMES[gender].first); } while (usedFirst.has(first));
-    usedFirst.add(first);
-    const last = U.pick(NAMES[gender].last);
-    const skills = {};
-    for (const s of skillKeys) skills[s] = U.int(0, 5);
-    skills[skillKeys[k]] = U.int(8, 12);
-    skills[U.pick(skillKeys)] += U.int(1, 3);
-    const look = {
-      skin: U.pick(skins),
-      hair: U.pick(hairs),
-      shirt: shirts[k],
-      pants: U.pick([[60, 64, 90], [80, 64, 48], [50, 54, 60], [96, 84, 64]]),
-      style: gender === 'f' ? U.pick(['long', 'long', 'bun', 'short']) : U.pick(['short', 'short', 'spiky', 'bald', 'beard']),
-    };
     const [ox, oy] = offsets[k];
     const p = World.canWalk(start.x + ox, start.y + oy) ? { x: start.x + ox, y: start.y + oy } : World.nearestWalkable(start.x, start.y);
-    out.push(new Colonist(k, p.x, p.y, { gender, first, last, look, skills, trait: traits[k], age: U.int(19, 52) }));
+    out.push(makeColonist(k, p.x, p.y, usedFirst, { gender, special: skillKeys[k], trait: traits[k], shirt: shirts[k] }));
   }
   return out;
 }
+
+</script>
+  <script>
+// ===== js/animals.js =====
+'use strict';
+/**
+ * Animals – zvěř na mapě. Zatím divočáci, kteří při nájezdu žerou úrodu na
+ * polích; bdělý kolonista poblíž je zaplaší.
+ */
+class Animal {
+  constructor(type, x, y) {
+    this.type = type;
+    this.x = x + 0.5; this.y = y + 0.5;
+    this.dir = 'left';
+    this.state = 'raid';      // raid | eat | flee
+    this.path = null; this.pathI = 0;
+    this.timer = 0;
+    this.target = -1;
+    this.leaveAt = TimeSys.minutes + 60 * 6;
+    this.animT = 0;
+    this.gone = false;
+  }
+  get tx() { return Math.floor(this.x); }
+  get ty() { return Math.floor(this.y); }
+
+  goTo(x, y, mode = 0) {
+    const p = Pathfinder.find(this.tx, this.ty, x, y, mode);
+    this.path = p; this.pathI = 0;
+    return !!p;
+  }
+  /** Krok po cestě; vrací true po dojití. */
+  step(speed) {
+    if (!this.path || this.pathI >= this.path.length) return true;
+    const ni = this.path[this.pathI];
+    if (!World.walk[ni]) { this.path = null; return true; }
+    const nx = (ni % World.w) + 0.5, ny = Math.floor(ni / World.w) + 0.5;
+    const dx = nx - this.x, dy = ny - this.y, d = Math.hypot(dx, dy);
+    const sp = speed / World.cost[ni];
+    if (d <= sp) { this.x = nx; this.y = ny; this.pathI++; }
+    else { this.x += dx / d * sp; this.y += dy / d * sp; }
+    if (Math.abs(dx) > 0.01) this.dir = dx > 0 ? 'right' : 'left';
+    this.animT += sp;
+    return false;
+  }
+  scared() {
+    for (const c of Game.colonists) {
+      if (!c.sleeping && Math.hypot(c.x - this.x, c.y - this.y) < 3) return true;
+    }
+    return false;
+  }
+  flee() {
+    this.state = 'flee';
+    // utéct pryč od kolonie
+    const s = World.start;
+    const ang = Math.atan2(this.y - s.y, this.x - s.x) + U.range(-0.5, 0.5);
+    for (let r = 26; r > 6; r -= 4) {
+      const x = Math.round(this.x + Math.cos(ang) * r), y = Math.round(this.y + Math.sin(ang) * r);
+      if (World.canWalk(x, y) && this.goTo(x, y)) return;
+    }
+    this.gone = true;
+  }
+  nearestCrop() {
+    let best = -1, bd = Infinity;
+    for (const i of World.cropSet) {
+      const d = Math.abs((i % World.w) - this.tx) + Math.abs(((i / World.w) | 0) - this.ty);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+
+  tick() {
+    if (this.state === 'flee') { if (this.step(0.13)) this.gone = true; return; }
+    if (TimeSys.minutes > this.leaveAt || this.scared()) { this.flee(); return; }
+    if (this.state === 'raid') {
+      if (this.target < 0 || !World.crops[this.target]) {
+        this.target = this.nearestCrop();
+        if (this.target < 0 || !this.goTo(this.target % World.w, (this.target / World.w) | 0)) { this.flee(); return; }
+      }
+      if (this.step(0.075)) { this.state = 'eat'; this.timer = 420; }
+    } else if (this.state === 'eat') {
+      if (--this.timer <= 0) {
+        if (World.crops[this.target]) { World.removeCrop(this.target); Game.stats.cropsEaten++; }
+        this.target = -1;
+        this.state = 'raid';
+      }
+    }
+  }
+}
+
+const Animals = {
+  list: [],
+  reset() { this.list = []; },
+  tick() {
+    if (!this.list.length) return;
+    for (const a of this.list) a.tick();
+    if (this.list.some(a => a.gone)) this.list = this.list.filter(a => !a.gone);
+  },
+  /** Nájezd divočáků na pole. Vrací true, pokud se podařilo zvěř vysadit. */
+  boarRaid() {
+    if (World.cropSet.size < 6) return false;
+    const crops = [...World.cropSet];
+    const c = crops[Math.floor(U.rand() * crops.length)];
+    const cx = c % World.w, cy = (c / World.w) | 0;
+    let n = 0;
+    const want = U.int(2, 3);
+    for (let k = 0; k < 60 && n < want; k++) {
+      const ang = U.rand() * Math.PI * 2, r = U.range(16, 24);
+      const x = Math.round(cx + Math.cos(ang) * r), y = Math.round(cy + Math.sin(ang) * r);
+      if (!World.canWalk(x, y) || !Pathfinder.find(x, y, cx, cy, 1)) continue;
+      this.list.push(new Animal('boar', x, y));
+      n++;
+    }
+    if (n) Game.alert('Divočáci se ženou na pole! Kolonista poblíž je zaplaší.', 'warn', cx, cy);
+    return n > 0;
+  },
+  pack() { return this.list.map(a => ({ type: a.type, x: a.x, y: a.y, leaveAt: a.leaveAt })); },
+  unpack(arr) {
+    this.list = (arr || []).map(d => { const a = new Animal(d.type, Math.floor(d.x), Math.floor(d.y)); a.leaveAt = d.leaveAt; return a; });
+  },
+};
+
+</script>
+  <script>
+// ===== js/events.js =====
+'use strict';
+/**
+ * Events – náhodné události: příchod nového kolonisty, nájezd zvěře na pole.
+ * (Požár po blesku spouští Weather.strike.) Kontroluje se jednou za herní hodinu.
+ */
+const Events = {
+  nextJoin: 0,
+  nextRaid: 0,
+
+  reset() {
+    this.nextJoin = TimeSys.minutes + 60 * 24 * U.range(3, 5);
+    this.nextRaid = TimeSys.minutes + 60 * 24 * U.range(2, 3.5);
+  },
+  hourly() {
+    const now = TimeSys.minutes;
+    if (now >= this.nextJoin) {
+      this.nextJoin = now + 60 * 24 * U.range(6, 10);
+      if (Game.colonists.length < Config.MAX_COLONISTS && TimeSys.daylight() > 0.5) this.wanderer();
+      else this.nextJoin = now + 60 * 6;
+    }
+    if (now >= this.nextRaid) {
+      // zvěř chodí na pole za soumraku a v noci, ne v zimě
+      if (TimeSys.season !== 3 && TimeSys.daylight() < 0.6 && Animals.boarRaid()) this.nextRaid = now + 60 * 24 * U.range(2.5, 5);
+      else this.nextRaid = now + 60 * 3;
+    }
+  },
+  /** K osadě se přidá poutník. */
+  wanderer() {
+    const s = World.start;
+    let pos = null;
+    for (let k = 0; k < 80 && !pos; k++) {
+      const ang = U.rand() * Math.PI * 2, r = U.range(14, 22);
+      const x = Math.round(s.x + Math.cos(ang) * r), y = Math.round(s.y + Math.sin(ang) * r);
+      if (World.canWalk(x, y) && Pathfinder.find(x, y, s.x, s.y, 1)) pos = { x, y };
+    }
+    if (!pos) return;
+    const used = new Set(Game.colonists.map(c => c.first));
+    const c = makeColonist(Game.nextId++, pos.x, pos.y, used);
+    Game.colonists.push(c);
+    Game.stats.joined++;
+    UI.buildColonistBar();
+    Game.alert(`${c.name} (${c.trait.name.toLowerCase()}) se přidává ke kolonii!`, 'good', pos.x, pos.y);
+  },
+  pack() { return { nextJoin: this.nextJoin, nextRaid: this.nextRaid }; },
+  unpack(d) { if (d) { this.nextJoin = d.nextJoin; this.nextRaid = d.nextRaid; } else this.reset(); },
+};
 
 </script>
   <script>
@@ -3078,7 +3701,7 @@ const Renderer = {
     this.splash = [];
     this.clouds = [];
     for (let k = 0; k < 14; k++) {
-      this.clouds.push({ x: U.rand() * World.w * 16, y: U.rand() * World.h * 16, r: U.range(90, 220), s: U.range(0.6, 1.2) });
+      this.clouds.push({ x: Math.random() * World.w * 16, y: Math.random() * World.h * 16, r: 90 + Math.random() * 130, s: 0.6 + Math.random() * 0.6 });
     }
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -3132,6 +3755,11 @@ const Renderer = {
     const dx0 = this.X(sx), dy0 = this.Y(sy);
     ctx.drawImage(Sprites.terrain, sx, sy, sw, sh, dx0, dy0, this.X(sx + sw) - dx0, this.Y(sy + sh) - dy0);
 
+    // sněhová pokrývka (jen venku – podlahy a místnosti se kreslí přes ni)
+    if (Weather.snow > 0.02) {
+      ctx.fillStyle = `rgba(236,242,250,${Weather.snow * 0.5})`;
+      ctx.fillRect(dx0, dy0, this.X(sx + sw) - dx0, this.Y(sy + sh) - dy0);
+    }
     this.drawGround(tx0, ty0, tx1, ty1);
     this.drawRows(tx0, ty0, tx1, ty1);
     this.drawOverlays(tx0, ty0, tx1, ty1);
@@ -3250,9 +3878,30 @@ const Renderer = {
         const bp = World.bp[i];
         if (bp && BUILD[bp.type].layer === 'struct') this.drawBlueprint(bp, wx, wy);
       }
+      for (const a of Animals.list) if (Math.floor(a.y) === y) this.drawAnimal(a);
       const cs = byRow.get(y);
       if (cs) { cs.sort((a, b) => a.y - b.y); for (const c of cs) this.drawColonist(c); }
     }
+    // plameny požárů
+    for (const i of Fire.tiles.keys()) {
+      const x = i % W, y = (i / W) | 0;
+      if (x < tx0 || x > tx1 || y < ty0 || y > ty1) continue;
+      this.drawFlame(x * TS + 5, y * TS + 12); this.drawFlame(x * TS + 11, y * TS + 9); this.drawFlame(x * TS + 8, y * TS + 14);
+    }
+  },
+
+  drawAnimal(a) {
+    const TS = Config.TILE, ctx = this.ctx;
+    const spr = Sprites.animals[a.type];
+    if (!spr) return;
+    const wx = a.x * TS, wy = a.y * TS;
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(this.X(wx), this.Y(wy + 4), 6 * this.z, 2 * this.z, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const moving = a.state !== 'eat';
+    const f = moving ? Math.floor(a.animT * 3) % 2 : (Math.sin(this.time * 6) > 0 ? 0 : 1);
+    this.img(spr[a.dir === 'right' ? 'right' : 'left'][f], wx - 8, wy - 7 + (moving ? 0 : 1), 16, 12);
   },
 
   drawObj(o, i, x, y, wx, wy) {
@@ -3472,6 +4121,7 @@ const Renderer = {
       const def = s && BUILD[s.type];
       if (def && def.light) out.push({ x: (i % World.w) + 0.5, y: ((i / World.w) | 0) + 0.5, r: def.light, fire: s.type === 'campfire' });
     }
+    for (const i of Fire.tiles.keys()) out.push({ x: (i % World.w) + 0.5, y: ((i / World.w) | 0) + 0.5, r: 4.5, fire: true });
     return out;
   },
   drawLighting() {
@@ -3534,7 +4184,18 @@ const Renderer = {
     const want = Math.floor(Weather.rain * (W * Hh) / (this.dpr * this.dpr) / 2600);
     while (this.rain.length < want) this.rain.push(this.newDrop(true));
     if (this.rain.length > want) this.rain.length = want;
-    if (this.rain.length) {
+    const snowing = TimeSys.temp() < 0;
+    if (this.rain.length && snowing) {
+      // sníh: pomalé bílé vločky
+      ctx.fillStyle = 'rgba(245,248,255,0.85)';
+      const sz = Math.max(2, 2 * this.dpr);
+      for (const d of this.rain) {
+        d.y += d.v * 0.16 * simDt * this.dpr;
+        d.x += (Weather.wind * 60 + Math.sin(d.y * 0.02 + d.l) * 20) * simDt * this.dpr;
+        if (d.y > this.cv.height + 10) { Object.assign(d, this.newDrop(false)); }
+        ctx.fillRect(d.x, d.y, sz, sz);
+      }
+    } else if (this.rain.length) {
       const wind = Weather.wind * 0.35;
       ctx.strokeStyle = 'rgba(180,200,240,0.5)';
       ctx.lineWidth = Math.max(1, this.dpr);
@@ -3585,8 +4246,9 @@ const Renderer = {
   },
   newDrop(anyY) {
     const W = this.cv.width, Hh = this.cv.height;
-    const y = anyY ? U.rand() * Hh : -20;
-    return { x: U.rand() * (W + 200) - 100, y, v: U.range(700, 1000), l: U.range(8, 14) * this.dpr, end: y + U.range(80, Hh) };
+    const y = anyY ? Math.random() * Hh : -20;
+    const R = Math.random;   // vykreslování nesmí spotřebovávat herní náhodu
+    return { x: R() * (W + 200) - 100, y, v: 700 + R() * 300, l: (8 + R() * 6) * this.dpr, end: y + 80 + R() * (Hh - 80) };
   },
 
   // ---------- Jmenovky ----------
@@ -3621,7 +4283,7 @@ const Renderer = {
 const UI = {
   TABS: [
     { id: 'orders', label: 'Příkazy', icon: 'chop', tools: ['select', 'chop', 'mine', 'harvest', 'decon', 'cancel'] },
-    { id: 'build', label: 'Stavba', icon: 'wall_wood', tools: ['wall_wood', 'wall_stone', 'door', 'floor_wood', 'floor_stone', 'bed', 'campfire', 'lamp'] },
+    { id: 'build', label: 'Stavba', icon: 'wall_wood', tools: ['wall_wood', 'wall_stone', 'door', 'floor_wood', 'floor_stone', 'bed', 'campfire', 'table', 'chair', 'chest', 'lamp'] },
     { id: 'zones', label: 'Zóny', icon: 'zone_farm', tools: ['zone_stock', 'zone_farm', 'zone_clear'] },
     { id: 'work', label: 'Práce', icon: 'priorities', action: () => UI.openPriorities() },
     { id: 'menu', label: 'Menu', icon: 'menu', action: () => UI.openMenu() },
@@ -3774,7 +4436,7 @@ const UI = {
       const card = this.el('div', 'ccard');
       card.innerHTML = `<img class="pix portrait" src="${Sprites.toURL(c.portrait, 4)}" alt="">
         <div class="cinfo"><div class="cname">${c.first}</div>
-        <div class="mini"><i class="b-food"></i></div><div class="mini"><i class="b-energy"></i></div><div class="mini"><i class="b-mood"></i></div></div>`;
+        <div class="mini"><i class="b-health"></i></div><div class="mini"><i class="b-food"></i></div><div class="mini"><i class="b-energy"></i></div><div class="mini"><i class="b-mood"></i></div></div>`;
       card.onclick = () => {
         if (Game.selected && Game.selected.c === c) Camera.follow = Camera.follow === c ? null : c;
         Game.select({ type: 'colonist', c });
@@ -3788,13 +4450,14 @@ const UI = {
     for (const c of Game.colonists) {
       const card = c.card;
       if (!card) continue;
+      card.querySelector('.b-health').style.width = c.health + '%';
       card.querySelector('.b-food').style.width = c.hunger + '%';
       card.querySelector('.b-energy').style.width = c.energy + '%';
       const m = card.querySelector('.b-mood');
       m.style.width = c.mood + '%';
       m.style.background = this.moodColor(c.mood);
       card.classList.toggle('sel', !!(Game.selected && Game.selected.c === c));
-      card.classList.toggle('alert', c.hunger < 15 || c.energy < 10 || c.inBreak());
+      card.classList.toggle('alert', c.hunger < 15 || c.energy < 10 || c.health < 50 || c.inBreak());
       card.title = `${c.name} – ${c.activity}`;
     }
   },
@@ -3831,6 +4494,7 @@ const UI = {
     this.$('pAct').textContent = (c.carry ? `[${ITEMS[c.carry.type].name} ×${c.carry.n}] ` : '') + c.activity;
     this.$('pFollow').textContent = Camera.follow === c ? 'Nesledovat' : 'Sledovat';
     this.$('pNeeds').innerHTML =
+      this.bar('Zdraví', c.health, c.health < 40 ? '#e5534b' : '#d9534f') +
       this.bar('Sytost', c.hunger, '#e3a23b') +
       this.bar('Energie', c.energy, '#58a6ff') +
       this.bar('Nálada', c.mood, this.moodColor(c.mood)) +
@@ -3846,7 +4510,10 @@ const UI = {
       `<div class="th ${f.val >= 0 ? 'pos' : 'neg'}"><span>${f.label}</span><b>${f.val > 0 ? '+' : ''}${f.val}</b></div>`).join('');
   },
   tileInfo(p, x, y) {
-    p.dataset.kind = 't';
+    // panel s filtrem se nepřekresluje při každé aktualizaci (klepnutí by se ztrácela)
+    const key = 't' + x + ',' + y + ':' + World.itemVer + ':' + (TimeSys.minutes / 30 | 0);
+    if (p.dataset.kind === key) return;
+    p.dataset.kind = key;
     const i = World.idx(x, y);
     const ter = TERRAIN[World.terrain[i]];
     const rows = [];
@@ -3871,11 +4538,36 @@ const UI = {
     const cr = World.crops[i];
     if (cr) rows.push(['Brambory', cr.g >= 1 ? 'zralé ke sklizni' : `roste ${Math.round(cr.g * 100)} %`]);
     const it = World.items[i];
-    if (it) rows.push(['Předmět', `${ITEMS[it.type].name} ×${it.n}`]);
+    if (it) {
+      const fr = World.freshness(i);
+      rows.push(['Předmět', `${ITEMS[it.type].name} ×${it.n}` + (fr >= 0 ? ` – čerstvost ${Math.round(fr * 100)} %` : '')]);
+    }
     if (World.zone[i]) rows.push(['Zóna', World.zone[i] === 1 ? 'Sklad' : 'Pole']);
-    p.innerHTML = `<div class="phead"><div><div class="ptitle">Políčko ${x}, ${y}</div></div><button class="x" id="infoClose">✕</button></div>
-      <table class="ttab">${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>`;
+    const room = World.roomAt(i);
+    if (room) rows.push(['Místnost', `pod střechou, ${room.tiles.length} políček` + (room.beds.length === 1 ? ', ložnice' : '') + (room.heat ? ', vytápěná' : '')]);
+    else if (World.isRoofed(i)) rows.push(['Střecha', 'ano']);
+    rows.push(['Teplota', Math.round(World.tempAt(i)) + ' °C']);
+    if (Fire.burning(i)) rows.push(['Požár', 'hoří!']);
+    // filtr skladu / truhly
+    let filterHtml = '';
+    if (World.isStock(i)) {
+      const f = World.filter[i];
+      filterHtml = `<div class="psec">Co se sem smí ukládat</div><div class="filters">` + ITEM_KEYS.map(k =>
+        `<button class="fbtn ${World.allowed(i, k) ? 'on' : ''}" data-k="${k}">${this.imgTag(k)}<span>${ITEMS[k].name}</span></button>`).join('') +
+        `</div><div class="pbtns"><button id="fAll">Vše</button><button id="fNone">Nic</button></div>
+        <div class="mnote">${World.isChest(i) ? 'Platí pro tuto truhlu.' : 'Platí pro celý souvislý sklad.'} Co sem nepatří, kolonisté odnesou jinam.</div>`;
+    }
+    p.innerHTML = `<div class="phead"><div><div class="ptitle">${World.isChest(i) ? 'Truhla' : World.zone[i] === 1 ? 'Sklad' : 'Políčko'} ${x}, ${y}</div></div><button class="x" id="infoClose">✕</button></div>
+      <table class="ttab">${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>${filterHtml}`;
     this.$('infoClose').onclick = () => Game.select(null);
+    if (filterHtml) {
+      const region = World.stockRegion(i);
+      const cur = () => (World.filter[i] & FILTER_CUSTOM) ? World.filter[i] : (FILTER_CUSTOM | (FILTER_CUSTOM - 1));
+      const apply = (mask) => { World.setFilter(region, mask); this.tileInfo(p, x, y); };
+      p.querySelectorAll('.fbtn').forEach(b => b.onclick = () => apply(cur() ^ ITEM_BIT[b.dataset.k]));
+      this.$('fAll').onclick = () => apply(0);
+      this.$('fNone').onclick = () => apply(FILTER_CUSTOM);
+    }
   },
 
   // ---------- Okno priorit ----------
@@ -3982,13 +4674,46 @@ const UI = {
         <li><b>Stavba → Postel</b> pro každého kolonistu, kolem postav <b>zdi</b> a <b>dveře</b>.</li>
         <li><b>Příkazy → Těžit</b> skálu (kámen) a železnou rudu (oranžové žilky) na lampy.</li>
       </ol>
-      <p>Hlídej ukazatele <b>sytosti</b>, <b>energie</b> a <b>nálady</b>. Velmi nešťastný kolonista se může psychicky zhroutit a přestat pracovat.</p>
+      <h4>Přežití</h4>
+      <ul>
+        <li><b>Zdraví:</b> dlouhé hladovění a vyčerpání ubírají zdraví a kolonista může zemřít. Když zemřou všichni, hra končí.</li>
+        <li><b>Roční období:</b> jaro, léto, podzim a zima po ${Config.SEASON_DAYS} dnech. V zimě plodiny nerostou a keře neplodí – udělej zásoby.</li>
+        <li><b>Kažení:</b> syrové potraviny se kazí rychleji než uvařené; pod střechou, v truhle a v chladu vydrží déle.</li>
+        <li><b>Místnosti:</b> prostor uzavřený zdmi a dveřmi je pod střechou – neprší tam a ohniště ho vytopí. Vlastní ložnice (místnost s jednou postelí) zlepšuje náladu.</li>
+        <li><b>Nábytek:</b> stůl se židlí vedle něj zlepší náladu při jídle. Klepnutím na sklad nebo truhlu nastavíš, co se tam smí ukládat.</li>
+        <li><b>Události:</b> poutníci se přidávají ke kolonii, divočáci žerou pole (bdělý kolonista je zaplaší) a blesk může zapálit les – oheň se šíří po stromech a dřevěných stavbách.</li>
+      </ul>
+      <p>Hlídej ukazatele <b>zdraví</b>, <b>sytosti</b>, <b>energie</b> a <b>nálady</b>. Velmi nešťastný kolonista se může psychicky zhroutit a přestat pracovat.</p>
       </div><div class="menu"><button id="mBack">${first ? 'Začít hrát' : 'Zavřít'}</button></div></div>`;
     m.classList.remove('hidden');
     const close = () => m.classList.add('hidden');
     this.$('mClose').onclick = close;
     this.$('mBack').onclick = close;
     m.onclick = (e) => { if (e.target === m) close(); };
+  },
+
+  /** Konec hry – všichni kolonisté zemřeli. */
+  gameOver() {
+    const m = this.$('modal'), st = Game.stats;
+    const days = TimeSys.day;
+    m.innerHTML = `<div class="mbox help"><div class="mhead"><b>Kolonie zanikla</b></div>
+      <div class="hbody">
+      <p>Poslední kolonista zemřel ${days}. dne (${TimeSys.seasonName.toLowerCase()}, rok ${TimeSys.year}).</p>
+      <table class="ttab">
+        <tr><td>Přežité dny</td><td>${days}</td></tr>
+        <tr><td>Postavené stavby</td><td>${st.built}</td></tr>
+        <tr><td>Pokácené stromy</td><td>${st.chopped}</td></tr>
+        <tr><td>Vytěžené skály</td><td>${st.mined}</td></tr>
+        <tr><td>Sklizeno potravin</td><td>${st.harvested}</td></tr>
+        <tr><td>Uvařená jídla</td><td>${st.cooked}</td></tr>
+        <tr><td>Příchozí kolonisté</td><td>${st.joined}</td></tr>
+      </table>
+      <h4>Padlí</h4>
+      <ul>${st.deaths.map(d => `<li>${d.name} – ${d.day}. den, ${d.cause}</li>`).join('')}</ul>
+      </div><div class="menu"><button id="mNewGame">Nová kolonie</button></div></div>`;
+    m.classList.remove('hidden');
+    m.onclick = null;
+    this.$('mNewGame').onclick = () => Main.boot(null);
   },
 
   // ---------- Notifikace ----------
@@ -4009,7 +4734,11 @@ const UI = {
     const d = TimeSys.daylight();
     this.$('sunIcon').textContent = d > 0.5 ? '☀️' : d > 0.05 ? '🌅' : '🌙';
     const wd = Weather.def;
-    this.$('weatherLabel').textContent = `${Weather.cur === 'clear' && d < 0.3 ? '✨' : wd.icon} ${wd.name}`;
+    const temp = TimeSys.temp();
+    this.$('weatherLabel').textContent = `${Weather.cur === 'clear' && d < 0.3 ? '✨' : (temp < 0 && wd.snowName ? '🌨️' : wd.icon)} ${temp < 0 && wd.snowName ? wd.snowName : wd.name}`;
+    const sl = this.$('seasonLabel');
+    sl.textContent = `${TimeSys.seasonName} ${Math.round(temp)}°C`;
+    sl.className = 's' + TimeSys.season;
     const counts = World.countItems();
     for (const k of ITEM_ORDER) this.$('res-' + k).textContent = counts[k];
     this.updateColonistBar();
@@ -4053,7 +4782,9 @@ const Save = {
       if (f) floor.push([i, f.type, f.decon ? 1 : 0]);
       if (W.zone[i] === 1) stock.push(i); else if (W.zone[i] === 2) farm.push(i);
     }
-    for (const i of W.itemSet) { const it = W.items[i]; items.push([i, it.type, it.n]); }
+    for (const i of W.itemSet) { const it = W.items[i]; items.push([i, it.type, it.n, +(it.age || 0).toFixed(2)]); }
+    const filter = [];
+    for (const i of W.stockTiles) if (W.filter[i]) filter.push([i, W.filter[i]]);
     for (const i of W.cropSet) crops.push([i, +W.crops[i].g.toFixed(4)]);
     for (const i of W.bpSet) bp.push([i, W.bp[i].type, W.bp[i].del]);
     // pořadí množin závisí na historii → seřadit, ať je uložení deterministické
@@ -4065,12 +4796,17 @@ const Save = {
       savedAt: Date.now(),
       label: `Den ${TimeSys.day}, ${TimeSys.timeStr()}`,
       time: { minutes: TimeSys.minutes, lastHour: TimeSys.lastHour },
-      weather: { cur: Weather.cur, until: Weather.until, rain: Weather.rain, cloud: Weather.cloud, fog: Weather.fog, wind: Weather.wind },
+      weather: { cur: Weather.cur, until: Weather.until, rain: Weather.rain, cloud: Weather.cloud, fog: Weather.fog, wind: Weather.wind, snow: Weather.snow },
       rng: U.getState(),
       tick: Game.tickCount,
       speed: Game.lastSpeed,
       cam: { x: Camera.x, y: Camera.y, zoom: Camera.zoom },
-      world: { objRemoved, objSet, struct, floor, items, crops, bp, stock, farm },
+      world: { objRemoved, objSet, struct, floor, items, crops, bp, stock, farm, filter },
+      fire: [...Fire.tiles].map(([i, f]) => [i, +f.t.toFixed(2)]),
+      animals: Animals.pack(),
+      events: Events.pack(),
+      stats: Game.stats,
+      nextId: Game.nextId,
       colonists: Game.colonists.map(c => this.packColonist(c)),
     };
   },
@@ -4081,7 +4817,7 @@ const Save = {
     return {
       id: c.id, gender: c.gender, first: c.first, last: c.last, look: c.look, trait: c.trait.id, age: c.age,
       x: c.x, y: c.y, dir: c.dir, skills, priorities: c.priorities,
-      hunger: c.hunger, energy: c.energy, mood: c.mood, thoughts: c.thoughts,
+      hunger: c.hunger, energy: c.energy, mood: c.mood, health: c.health, thoughts: c.thoughts,
       carry: c.carry, breakUntil: c.breakUntil,
     };
   },
@@ -4096,6 +4832,7 @@ const Save = {
     for (const w of WORK_TYPES) if (d.priorities[w.id] !== undefined) c.priorities[w.id] = d.priorities[w.id];
     c.x = d.x; c.y = d.y; c.dir = d.dir || 'down';
     c.hunger = d.hunger; c.energy = d.energy; c.mood = d.mood; c.moodTarget = d.mood;
+    c.health = d.health !== undefined ? d.health : 100;
     c.thoughts = d.thoughts || [];
     c.carry = d.carry || null;
     c.breakUntil = d.breakUntil || 0;
@@ -4121,7 +4858,9 @@ const Save = {
     W.items.fill(null); W.struct.fill(null); W.floor.fill(null); W.crops.fill(null); W.bp.fill(null); W.zone.fill(0);
     for (const [i, type, decon, owner] of w.struct) W.struct[i] = { type, decon: !!decon, owner };
     for (const [i, type, decon] of w.floor) W.floor[i] = { type, decon: !!decon };
-    for (const [i, type, k] of w.items) W.items[i] = { type, n: k };
+    for (const [i, type, k, age] of w.items) W.items[i] = { type, n: k, age: age || 0 };
+    W.filter.fill(0);
+    for (const [i, m] of w.filter || []) W.filter[i] = m;
     for (const [i, g] of w.crops) W.crops[i] = { g };
     for (const [i, type, del] of w.bp) W.bp[i] = { type, del: del || {} };
     for (const i of w.stock) W.zone[i] = 1;
@@ -4131,6 +4870,12 @@ const Save = {
     Game.res.clear(); Game.itemRes.clear();
     for (const k in Game.resType) Game.resType[k] = 0;
     Game.colonists = d.colonists.map(c => this.unpackColonist(c));
+    Game.nextId = d.nextId !== undefined ? d.nextId : Math.max(-1, ...Game.colonists.map(c => c.id)) + 1;
+    if (d.stats) Game.stats = Object.assign(Game.stats, d.stats);
+    Fire.reset();
+    for (const [i, t] of d.fire || []) Fire.tiles.set(i, { t });
+    Animals.unpack(d.animals);
+    Events.unpack(d.events);
     Game.tickCount = d.tick || 0;
     Game.lastSpeed = d.speed || 1;
     Object.assign(Weather, d.weather);
@@ -4143,6 +4888,7 @@ const Save = {
     return !!d && d.v === this.VERSION && Number.isFinite(d.seed) && d.world && Array.isArray(d.colonists) && d.time;
   },
   store() {
+    if (Game.over || !Game.colonists.length) return false;
     try {
       localStorage.setItem(this.KEY, JSON.stringify(this.serialize()));
       this.lastError = null;
@@ -4201,7 +4947,11 @@ const Game = {
   colonists: [],
   res: new Map(),        // klíč → id kolonisty (rezervace cílů)
   itemRes: new Map(),    // index políčka → rezervovaný počet kusů
-  resType: { wood: 0, stone: 0, iron: 0, food: 0, meal: 0 }, // rezervováno celkem podle typu
+  resType: {},           // rezervováno celkem podle typu suroviny
+  nextId: 4,
+  over: false,
+  stats: null,
+  alerts: [],            // poslední upozornění {msg, kind, x, y, t}
   speed: 1,
   lastSpeed: 1,
   autoFast: false,       // zrychlit čas, když všichni kolonisté spí
@@ -4221,10 +4971,16 @@ const Game = {
     Pathfinder.init(World.w, World.h);
     Sprites.buildTerrain();
     this.res.clear(); this.itemRes.clear(); this.notified.clear();
-    for (const k in this.resType) this.resType[k] = 0;
+    for (const k of ITEM_KEYS) this.resType[k] = 0;
     this.tickCount = 0; this.pending = null;
+    this.over = false;
+    this.alerts = [];
+    this.stats = { built: 0, chopped: 0, mined: 0, cooked: 0, harvested: 0, cropsEaten: 0, joined: 0, deaths: [] };
+    Fire.reset(); Animals.reset();
     this.colonists = createColonists(World.start);
+    this.nextId = this.colonists.length;
     Weather.reset();
+    Events.reset();
     Camera.zoom = Config.ZOOM_DEFAULT;
     Camera.centerTile(World.start.x, World.start.y + 1);
   },
@@ -4321,6 +5077,30 @@ const Game = {
     }
     return false;
   },
+  /** Upozornění vázané na místo na mapě (ukládá se do seznamu upozornění). */
+  alert(msg, kind, x, y) {
+    this.alerts.push({ msg, kind, x, y, t: TimeSys.minutes });
+    if (this.alerts.length > 40) this.alerts.shift();
+    UI.toast(msg, kind);
+  },
+  /** Smrt kolonisty; když zemřou všichni, hra končí. */
+  killColonist(c, cause) {
+    if (c.dead) return;
+    c.dead = true;
+    c.endJob();
+    for (const i of World.structBy.bed || []) if (World.struct[i].owner === c.id) World.struct[i].owner = -1;
+    this.colonists = this.colonists.filter(q => q !== c);
+    this.stats.deaths.push({ name: c.name, day: TimeSys.day, cause });
+    if (this.selected && this.selected.c === c) this.select(null);
+    if (Camera.follow === c) Camera.follow = null;
+    UI.buildColonistBar();
+    this.alert(`${c.name} zemřel/a ${cause}.`, 'warn', c.tx, c.ty);
+    if (!this.colonists.length) {
+      this.over = true;
+      Save.clear();
+      UI.gameOver();
+    }
+  },
   /** Upozornění nejvýše jednou za `cooldownMin` herních minut. */
   notifyOnce(key, msg, kind, cooldownMin) {
     const last = this.notified.get(key);
@@ -4370,10 +5150,15 @@ const Game = {
     this.tickCount++;
     const hourBefore = TimeSys.lastHour;
     TimeSys.tick();
-    if (TimeSys.lastHour !== hourBefore) Save.auto();   // jednou za herní hodinu
+    if (TimeSys.lastHour !== hourBefore) { Events.hourly(); Save.auto(); }   // jednou za herní hodinu
     Weather.tick();
-    if (this.tickCount % 30 === 0) World.update(30 * Config.HOURS_PER_TICK);
-    for (const c of this.colonists) c.tick();
+    if (this.tickCount % 30 === 0) {
+      const hours = 30 * Config.HOURS_PER_TICK;
+      World.update(hours);
+      Fire.update(hours);
+    }
+    Animals.tick();
+    for (const c of this.colonists.slice()) c.tick();
   },
 
   start() {
@@ -4384,7 +5169,7 @@ const Game = {
       last = now;
       this.acc += dt * Config.TPS * this.effectiveSpeed();
       let steps = 0;
-      while (this.acc >= 1 && steps < 16) { this.tick(); this.acc -= 1; steps++; }
+      while (this.acc >= 1 && steps < 16 && !this.over) { this.tick(); this.acc -= 1; steps++; }
       if (steps >= 16) this.acc = 0;
       Input.update(dt);
       Camera.update();

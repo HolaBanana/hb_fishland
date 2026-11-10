@@ -41,9 +41,9 @@ const Jobs = (() => {
   function findStockDest(type, c) {
     let best = -1, bs = Infinity;
     for (const i of World.stockTiles) {
-      if (!World.canHoldItem(i) || Game.isReserved('d' + i, c)) continue;
+      if (!World.canStore(i) || !World.allowed(i, type) || Game.isReserved('d' + i, c)) continue;
       const it = World.items[i];
-      if (it && (it.type !== type || it.n >= Config.STACK)) continue;
+      if (it && (it.type !== type || it.n >= World.stackCap(i))) continue;
       let s = Math.abs(ix(i) - c.tx) + Math.abs(iy(i) - c.ty);
       if (it) s -= 6; // přednostně doplnit existující hromádku
       if (s < bs) { bs = s; best = i; }
@@ -57,9 +57,9 @@ const Jobs = (() => {
     if (spaceCache[type] !== undefined) return spaceCache[type];
     let ok = false;
     for (const i of World.stockTiles) {
-      if (!World.canHoldItem(i)) continue;
+      if (!World.canStore(i) || !World.allowed(i, type)) continue;
       const it = World.items[i];
-      if (!it || (it.type === type && it.n < Config.STACK)) { ok = true; break; }
+      if (!it || (it.type === type && it.n < World.stackCap(i))) { ok = true; break; }
     }
     return (spaceCache[type] = ok);
   }
@@ -81,6 +81,38 @@ const Jobs = (() => {
       if (s.owner >= 0 && s.owner !== c.id && Game.colonistById(s.owner)) continue;
       if ((c.unreach.get('b' + i) || 0) > TimeSys.minutes) continue;
       const d = Math.abs(ix(i) - c.tx) + Math.abs(iy(i) - c.ty);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+
+  /** Nejbližší požár v okolí kolonie, který ještě nikdo nehasí. */
+  function findFire(c) {
+    let best = -1, bd = Infinity;
+    const s = World.start, now = TimeSys.minutes;
+    for (const i of Fire.tiles.keys()) {
+      const x = ix(i), y = iy(i);
+      if (Math.abs(x - s.x) > 45 || Math.abs(y - s.y) > 45) continue;
+      if (Game.isReserved('f' + i, c) || (c.unreach.get('f' + i) || 0) > now) continue;
+      const d = Math.abs(x - c.tx) + Math.abs(y - c.ty);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+  /** Volná židle u stolu poblíž. */
+  function findSeat(c) {
+    const chairs = World.structBy.chair, w = World.w;
+    if (!chairs) return -1;
+    let best = -1, bd = 30;
+    for (const i of chairs) {
+      if (World.struct[i].decon || Game.isReserved('s' + i, c)) continue;
+      const x = i % w;
+      let table = false;
+      for (const q of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+        if (q >= 0 && q < World.n && World.struct[q] && World.struct[q].type === 'table') { table = true; break; }
+      }
+      if (!table) continue;
+      const d = Math.abs(x - c.tx) + Math.abs(iy(i) - c.ty);
       if (d < bd) { bd = d; best = i; }
     }
     return best;
@@ -295,6 +327,7 @@ const Jobs = (() => {
         if (j.progress >= def.work) {
           World.completeBlueprint(i);
           Game.onTileChanged(bx, by);
+          Game.stats.built++;
           return DONE;
         }
       }
@@ -360,6 +393,7 @@ const Jobs = (() => {
         World.removeCrop(i);
         const yieldN = Math.round(6 * (0.85 + c.skills.grow.lvl * 0.04));
         World.dropItem(x, y, 'food', yieldN);
+        Game.stats.harvested += yieldN;
         return DONE;
       }
     },
@@ -408,6 +442,7 @@ const Jobs = (() => {
           if (c.carry.n <= 0) {
             c.carry = null;
             World.dropItem(c.tx, c.ty, 'meal', j.made);
+            Game.stats.cooked += j.made;
             return DONE;
           }
         }
@@ -440,42 +475,71 @@ const Jobs = (() => {
         if (r === 'fail') return FAIL;
         if (r === 'moving') return;
         if (c.carry) {
-          const left = World.putItem(j.dest, c.carry.type, c.carry.n);
-          if (left > 0) World.dropItem(c.tx, c.ty, c.carry.type, left);
+          const left = World.putItem(j.dest, c.carry.type, c.carry.n, c.carry.age || 0);
+          if (left > 0) World.dropItem(c.tx, c.ty, c.carry.type, left, c.carry.age || 0);
           c.carry = null;
         }
         return DONE;
       }
     },
 
+    /** Jídlo: dojít pro porci, vzít ji a sníst – u stolu, pokud je volná židle. */
     eat(c, j) {
-      const i = j.i;
-      const it = World.items[i];
-      if (!it || (it.type !== 'meal' && it.type !== 'food')) return FAIL;
       if (j.stage === 0) {
+        const it = World.items[j.i];
+        if (!it || (it.type !== 'meal' && it.type !== 'food')) return FAIL;
         c.activity = 'Jde se najíst';
-        const r = walk(c, j, ix(i), iy(i), 0);
+        const r = walk(c, j, ix(j.i), iy(j.i), 0, 'i' + j.i);
         if (r === 'fail') return FAIL;
         if (r === 'moving') return;
-        j.stage = 1;
+        j.food = it.type;
+        if (!c.pickup(j.i, 1, it.type)) return FAIL;
+        j.seat = findSeat(c);
+        if (j.seat >= 0 && !Game.reserve('s' + j.seat, c)) j.seat = -1;
+        j.stage = j.seat >= 0 ? 1 : 2;
       }
-      c.activity = it.type === 'meal' ? 'Jí teplé jídlo' : 'Jí syrové potraviny';
+      if (j.stage === 1) {
+        c.activity = 'Nese si jídlo ke stolu';
+        const r = walk(c, j, ix(j.seat), iy(j.seat), 0, 's' + j.seat);
+        if (r === 'moving') return;
+        if (r === 'fail') j.seat = -1;
+        j.stage = 2;
+      }
+      if (!c.carry || c.carry.type !== j.food) return FAIL;
+      c.activity = (j.food === 'meal' ? 'Jí teplé jídlo' : 'Jí syrové potraviny') + (j.seat >= 0 ? ' u stolu' : '');
       j.progress++;
       c.workFrac = j.progress / 50;
       c.eating = true;
       if (j.progress >= 50) {
-        const type = it.type;
-        Game.releaseItemRes(c, i);
-        if (!World.takeItem(i, 1)) return FAIL;
-        if (type === 'meal') {
+        c.carry = null;
+        if (j.food === 'meal') {
           c.hunger = Math.min(100, c.hunger + 60);
           c.addThought('meal', 'Teplé jídlo', 6, 10);
         } else {
           c.hunger = Math.min(100, c.hunger + 32);
           c.addThought('raw', 'Jedl/a syrové jídlo', -6, 10);
         }
+        if (j.seat >= 0) c.addThought('table', 'Jedl/a u stolu', 4, 10);
         return DONE;
       }
+    },
+
+    /** Hašení požáru – dělá ho každý bez ohledu na priority. */
+    firefight(c, j) {
+      const i = j.i;
+      if (!Fire.burning(i)) return DONE;
+      if (j.stage === 0) {
+        c.activity = 'Běží hasit požár';
+        const r = walk(c, j, ix(i), iy(i), 2, 'f' + i);
+        if (r === 'fail') return FAIL;
+        if (r === 'moving') return;
+        j.stage = 1;
+      }
+      c.activity = 'Hasí požár';
+      c.face(ix(i), iy(i));
+      j.progress += c.work(null);
+      c.workFrac = j.progress / 45;
+      if (j.progress >= 45) { Fire.extinguish(i); return DONE; }
     },
 
     sleep(c, j) {
@@ -498,8 +562,12 @@ const Jobs = (() => {
       c.energy = Math.min(100, c.energy + rate);
       const wake = (!TimeSys.isNight() && c.energy >= 97) || c.hunger < 12 || (c.energy >= 100 && TimeSys.hour >= 5 && TimeSys.hour < 22);
       if (wake) {
-        if (j.bed >= 0) c.addThought('sleep', 'Vyspal/a se v posteli', 4, 14);
-        else c.addThought('sleep', 'Spal/a na zemi', -7, 14);
+        if (j.bed >= 0) {
+          const room = World.roomAt(j.bed);
+          if (room && room.beds.length === 1) c.addThought('sleep', 'Vlastní ložnice', 9, 14);
+          else if (room) c.addThought('sleep', 'Vyspal/a se pod střechou', 5, 14);
+          else c.addThought('sleep', 'Postel pod širým nebem', 2, 14);
+        } else c.addThought('sleep', 'Spal/a na zemi', -7, 14);
         return DONE;
       }
     },
@@ -550,12 +618,16 @@ const Jobs = (() => {
     if (j.progress < need) return;
     if (o.type === 'tree') {
       World.removeObj(i);
+      Fire.extinguish(i);
+      Game.stats.chopped++;
       World.dropItem(x, y, 'wood', Math.round(10 * o.size + c.skills.chop.lvl * 0.15));
     } else if (o.type === 'rock') {
       World.removeObj(i);
+      Game.stats.mined++;
       World.dropItem(x, y, 'stone', U.int(5, 7));
     } else if (o.type === 'ore') {
       World.removeObj(i);
+      Game.stats.mined++;
       World.dropItem(x, y, 'iron', U.int(4, 6));
       if (U.chance(0.5)) World.dropItem(x, y, 'stone', 2);
     } else if (o.type === 'bush') {
@@ -567,5 +639,5 @@ const Jobs = (() => {
     return DONE;
   }
 
-  return { DONE, FAIL, drivers, findWork, findFood, hasFood, findBed, nearestItem, anyItem, candidates };
+  return { DONE, FAIL, drivers, findWork, findFood, hasFood, findBed, findFire, findSeat, nearestItem, anyItem, candidates };
 })();

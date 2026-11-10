@@ -39,6 +39,14 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 #clock { display: flex; gap: 8px; align-items: center; padding: 2px 10px; font-size: 20px; white-space: nowrap; }
 #dayLabel { color: var(--accent); }
 #weatherLabel { color: var(--muted); }
+#seasonLabel.s0 { color: #9fe08a; }
+#seasonLabel.s1 { color: #ffd35a; }
+#seasonLabel.s2 { color: #e9955a; }
+#seasonLabel.s3 { color: #a9d4ff; }
+.filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 4px; margin: 4px 0; }
+.fbtn { display: flex; align-items: center; gap: 4px; padding: 4px; font-size: 16px; background: var(--panel2); border: 2px solid #3d3122; border-radius: 3px; opacity: 0.45; min-height: 36px; }
+.fbtn.on { opacity: 1; border-color: var(--good); }
+.fbtn img { width: 20px; height: 20px; }
 #resources { display: flex; gap: 2px; align-items: center; padding: 2px 6px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 #resources::-webkit-scrollbar { display: none; }
 .res { display: flex; align-items: center; gap: 3px; padding: 0 6px; font-size: 20px; white-space: nowrap; }
@@ -64,8 +72,9 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 .portrait.sm { width: 26px; height: 22px; vertical-align: middle; margin-right: 6px; }
 .cinfo { flex: 1; min-width: 0; }
 .cname { font-size: 18px; line-height: 16px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mini { height: 4px; background: #0e0b08; margin-top: 2px; }
+.mini { height: 3px; background: #0e0b08; margin-top: 2px; }
 .mini i { display: block; height: 100%; }
+.b-health { background: #d9534f; }
 .b-food { background: #e3a23b; }
 .b-energy { background: #58a6ff; }
 
@@ -249,4 +258,7 @@ body.fast:not(.paused) #fastBadge { display: block; }
 @media (max-width: 420px) {
   .tab span { display: none; }
   #weatherLabel { display: none; }
+}
+@media (max-width: 760px) {
+  #clock { flex-wrap: wrap; row-gap: 0; max-width: 58%; line-height: 18px; }
 }

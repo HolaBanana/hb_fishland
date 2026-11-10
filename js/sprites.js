@@ -351,6 +351,33 @@ const Sprites = (() => {
       rect(2, 9, 12, 1, [80, 116, 186]);
       rect(1, 15, 14, 1, [80, 50, 28]);
     }));
+    S.build.table = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 3, 14, 9, [176, 126, 74]);
+      rect(1, 3, 14, 1, [206, 158, 100]);
+      for (let x = 1; x < 15; x += 4) rect(x, 4, 1, 8, [150, 104, 60]);
+      rect(1, 12, 14, 2, [116, 78, 44]);
+      rect(2, 14, 2, 2, [90, 58, 32]); rect(12, 14, 2, 2, [90, 58, 32]);
+      // miska a hrnek
+      rect(5, 6, 4, 2, [226, 220, 204]); rect(6, 6, 2, 1, [214, 120, 52]);
+      rect(11, 5, 2, 2, [150, 160, 176]);
+    }));
+    S.build.chair = outline(paint(16, 16, (set, get, rect) => {
+      rect(4, 2, 8, 6, [150, 104, 60]);
+      rect(4, 2, 8, 1, [186, 138, 86]);
+      rect(5, 4, 6, 1, [116, 78, 44]);
+      rect(4, 8, 8, 4, [176, 126, 74]);
+      rect(4, 8, 8, 1, [206, 158, 100]);
+      rect(4, 12, 2, 3, [96, 62, 36]); rect(10, 12, 2, 3, [96, 62, 36]);
+    }));
+    S.build.chest = outline(paint(16, 16, (set, get, rect) => {
+      rect(2, 4, 12, 10, [140, 92, 50]);
+      rect(2, 4, 12, 4, [168, 116, 66]);
+      rect(2, 4, 12, 1, [200, 150, 92]);
+      rect(2, 8, 12, 1, [84, 54, 30]);
+      rect(2, 4, 1, 10, [90, 94, 104]); rect(13, 4, 1, 10, [90, 94, 104]);
+      rect(7, 7, 2, 3, [232, 200, 96]); set(7, 9, [150, 120, 50]);
+      rect(2, 13, 12, 1, [96, 62, 34]);
+    }));
     S.build.campfire = paint(16, 16, (set) => {
       for (let a = 0; a < 12; a++) {
         const ang = a / 12 * Math.PI * 2;
@@ -500,6 +527,26 @@ const Sprites = (() => {
     return c;
   }
 
+  // ============ ZVĚŘ ============
+  function makeAnimals() {
+    const boar = (f, flip) => outline(paint(16, 12, (set, get, rect) => {
+      const X = (x) => flip ? 15 - x : x;
+      const body = [96, 72, 56], dark = [70, 52, 40], light = [124, 96, 76];
+      for (let y = 3; y < 9; y++) for (let x = 3; x < 13; x++) {
+        const dx = (x - 7.5) / 5, dy = (y - 5.5) / 3;
+        if (dx * dx + dy * dy <= 1) set(X(x), y, y < 5 ? light : y > 6 ? dark : body);
+      }
+      for (let x = 4; x < 11; x += 2) set(X(x), 2, dark);          // štětiny
+      rect(flip ? 12 : 1, 5, 3, 3, body); set(X(1), 6, [200, 150, 140]); set(X(0), 6, [200, 150, 140]);
+      set(X(2), 5, [20, 16, 16]); set(X(1), 8, [236, 230, 214]);    // oko, kel
+      const l1 = f ? 0 : 1, l2 = f ? 1 : 0;
+      rect(X(4) - (flip ? 0 : 0), 9, 1, 2 - l1, dark); rect(X(6), 9, 1, 2 - l2, dark);
+      rect(X(9), 9, 1, 2 - l2, dark); rect(X(11), 9, 1, 2 - l1, dark);
+      set(X(13), 4, dark);
+    }));
+    S.animals = { boar: { left: [boar(0, false), boar(1, false)], right: [boar(0, true), boar(1, true)] } };
+  }
+
   // ============ IKONY NÁSTROJŮ ============
   function makeIcons() {
     const I = S.icons;
@@ -553,6 +600,7 @@ const Sprites = (() => {
     makeBuild();
     makeCrops();
     makeDes();
+    makeAnimals();
     makeIcons();
   }
 

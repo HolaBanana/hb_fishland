@@ -6,7 +6,7 @@
 const UI = {
   TABS: [
     { id: 'orders', label: 'Příkazy', icon: 'chop', tools: ['select', 'chop', 'mine', 'harvest', 'decon', 'cancel'] },
-    { id: 'build', label: 'Stavba', icon: 'wall_wood', tools: ['wall_wood', 'wall_stone', 'door', 'floor_wood', 'floor_stone', 'bed', 'campfire', 'lamp'] },
+    { id: 'build', label: 'Stavba', icon: 'wall_wood', tools: ['wall_wood', 'wall_stone', 'door', 'floor_wood', 'floor_stone', 'bed', 'campfire', 'table', 'chair', 'chest', 'lamp'] },
     { id: 'zones', label: 'Zóny', icon: 'zone_farm', tools: ['zone_stock', 'zone_farm', 'zone_clear'] },
     { id: 'work', label: 'Práce', icon: 'priorities', action: () => UI.openPriorities() },
     { id: 'menu', label: 'Menu', icon: 'menu', action: () => UI.openMenu() },
@@ -159,7 +159,7 @@ const UI = {
       const card = this.el('div', 'ccard');
       card.innerHTML = `<img class="pix portrait" src="${Sprites.toURL(c.portrait, 4)}" alt="">
         <div class="cinfo"><div class="cname">${c.first}</div>
-        <div class="mini"><i class="b-food"></i></div><div class="mini"><i class="b-energy"></i></div><div class="mini"><i class="b-mood"></i></div></div>`;
+        <div class="mini"><i class="b-health"></i></div><div class="mini"><i class="b-food"></i></div><div class="mini"><i class="b-energy"></i></div><div class="mini"><i class="b-mood"></i></div></div>`;
       card.onclick = () => {
         if (Game.selected && Game.selected.c === c) Camera.follow = Camera.follow === c ? null : c;
         Game.select({ type: 'colonist', c });
@@ -173,13 +173,14 @@ const UI = {
     for (const c of Game.colonists) {
       const card = c.card;
       if (!card) continue;
+      card.querySelector('.b-health').style.width = c.health + '%';
       card.querySelector('.b-food').style.width = c.hunger + '%';
       card.querySelector('.b-energy').style.width = c.energy + '%';
       const m = card.querySelector('.b-mood');
       m.style.width = c.mood + '%';
       m.style.background = this.moodColor(c.mood);
       card.classList.toggle('sel', !!(Game.selected && Game.selected.c === c));
-      card.classList.toggle('alert', c.hunger < 15 || c.energy < 10 || c.inBreak());
+      card.classList.toggle('alert', c.hunger < 15 || c.energy < 10 || c.health < 50 || c.inBreak());
       card.title = `${c.name} – ${c.activity}`;
     }
   },
@@ -216,6 +217,7 @@ const UI = {
     this.$('pAct').textContent = (c.carry ? `[${ITEMS[c.carry.type].name} ×${c.carry.n}] ` : '') + c.activity;
     this.$('pFollow').textContent = Camera.follow === c ? 'Nesledovat' : 'Sledovat';
     this.$('pNeeds').innerHTML =
+      this.bar('Zdraví', c.health, c.health < 40 ? '#e5534b' : '#d9534f') +
       this.bar('Sytost', c.hunger, '#e3a23b') +
       this.bar('Energie', c.energy, '#58a6ff') +
       this.bar('Nálada', c.mood, this.moodColor(c.mood)) +
@@ -231,7 +233,10 @@ const UI = {
       `<div class="th ${f.val >= 0 ? 'pos' : 'neg'}"><span>${f.label}</span><b>${f.val > 0 ? '+' : ''}${f.val}</b></div>`).join('');
   },
   tileInfo(p, x, y) {
-    p.dataset.kind = 't';
+    // panel s filtrem se nepřekresluje při každé aktualizaci (klepnutí by se ztrácela)
+    const key = 't' + x + ',' + y + ':' + World.itemVer + ':' + (TimeSys.minutes / 30 | 0);
+    if (p.dataset.kind === key) return;
+    p.dataset.kind = key;
     const i = World.idx(x, y);
     const ter = TERRAIN[World.terrain[i]];
     const rows = [];
@@ -256,11 +261,36 @@ const UI = {
     const cr = World.crops[i];
     if (cr) rows.push(['Brambory', cr.g >= 1 ? 'zralé ke sklizni' : `roste ${Math.round(cr.g * 100)} %`]);
     const it = World.items[i];
-    if (it) rows.push(['Předmět', `${ITEMS[it.type].name} ×${it.n}`]);
+    if (it) {
+      const fr = World.freshness(i);
+      rows.push(['Předmět', `${ITEMS[it.type].name} ×${it.n}` + (fr >= 0 ? ` – čerstvost ${Math.round(fr * 100)} %` : '')]);
+    }
     if (World.zone[i]) rows.push(['Zóna', World.zone[i] === 1 ? 'Sklad' : 'Pole']);
-    p.innerHTML = `<div class="phead"><div><div class="ptitle">Políčko ${x}, ${y}</div></div><button class="x" id="infoClose">✕</button></div>
-      <table class="ttab">${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>`;
+    const room = World.roomAt(i);
+    if (room) rows.push(['Místnost', `pod střechou, ${room.tiles.length} políček` + (room.beds.length === 1 ? ', ložnice' : '') + (room.heat ? ', vytápěná' : '')]);
+    else if (World.isRoofed(i)) rows.push(['Střecha', 'ano']);
+    rows.push(['Teplota', Math.round(World.tempAt(i)) + ' °C']);
+    if (Fire.burning(i)) rows.push(['Požár', 'hoří!']);
+    // filtr skladu / truhly
+    let filterHtml = '';
+    if (World.isStock(i)) {
+      const f = World.filter[i];
+      filterHtml = `<div class="psec">Co se sem smí ukládat</div><div class="filters">` + ITEM_KEYS.map(k =>
+        `<button class="fbtn ${World.allowed(i, k) ? 'on' : ''}" data-k="${k}">${this.imgTag(k)}<span>${ITEMS[k].name}</span></button>`).join('') +
+        `</div><div class="pbtns"><button id="fAll">Vše</button><button id="fNone">Nic</button></div>
+        <div class="mnote">${World.isChest(i) ? 'Platí pro tuto truhlu.' : 'Platí pro celý souvislý sklad.'} Co sem nepatří, kolonisté odnesou jinam.</div>`;
+    }
+    p.innerHTML = `<div class="phead"><div><div class="ptitle">${World.isChest(i) ? 'Truhla' : World.zone[i] === 1 ? 'Sklad' : 'Políčko'} ${x}, ${y}</div></div><button class="x" id="infoClose">✕</button></div>
+      <table class="ttab">${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>${filterHtml}`;
     this.$('infoClose').onclick = () => Game.select(null);
+    if (filterHtml) {
+      const region = World.stockRegion(i);
+      const cur = () => (World.filter[i] & FILTER_CUSTOM) ? World.filter[i] : (FILTER_CUSTOM | (FILTER_CUSTOM - 1));
+      const apply = (mask) => { World.setFilter(region, mask); this.tileInfo(p, x, y); };
+      p.querySelectorAll('.fbtn').forEach(b => b.onclick = () => apply(cur() ^ ITEM_BIT[b.dataset.k]));
+      this.$('fAll').onclick = () => apply(0);
+      this.$('fNone').onclick = () => apply(FILTER_CUSTOM);
+    }
   },
 
   // ---------- Okno priorit ----------
@@ -367,13 +397,46 @@ const UI = {
         <li><b>Stavba → Postel</b> pro každého kolonistu, kolem postav <b>zdi</b> a <b>dveře</b>.</li>
         <li><b>Příkazy → Těžit</b> skálu (kámen) a železnou rudu (oranžové žilky) na lampy.</li>
       </ol>
-      <p>Hlídej ukazatele <b>sytosti</b>, <b>energie</b> a <b>nálady</b>. Velmi nešťastný kolonista se může psychicky zhroutit a přestat pracovat.</p>
+      <h4>Přežití</h4>
+      <ul>
+        <li><b>Zdraví:</b> dlouhé hladovění a vyčerpání ubírají zdraví a kolonista může zemřít. Když zemřou všichni, hra končí.</li>
+        <li><b>Roční období:</b> jaro, léto, podzim a zima po ${Config.SEASON_DAYS} dnech. V zimě plodiny nerostou a keře neplodí – udělej zásoby.</li>
+        <li><b>Kažení:</b> syrové potraviny se kazí rychleji než uvařené; pod střechou, v truhle a v chladu vydrží déle.</li>
+        <li><b>Místnosti:</b> prostor uzavřený zdmi a dveřmi je pod střechou – neprší tam a ohniště ho vytopí. Vlastní ložnice (místnost s jednou postelí) zlepšuje náladu.</li>
+        <li><b>Nábytek:</b> stůl se židlí vedle něj zlepší náladu při jídle. Klepnutím na sklad nebo truhlu nastavíš, co se tam smí ukládat.</li>
+        <li><b>Události:</b> poutníci se přidávají ke kolonii, divočáci žerou pole (bdělý kolonista je zaplaší) a blesk může zapálit les – oheň se šíří po stromech a dřevěných stavbách.</li>
+      </ul>
+      <p>Hlídej ukazatele <b>zdraví</b>, <b>sytosti</b>, <b>energie</b> a <b>nálady</b>. Velmi nešťastný kolonista se může psychicky zhroutit a přestat pracovat.</p>
       </div><div class="menu"><button id="mBack">${first ? 'Začít hrát' : 'Zavřít'}</button></div></div>`;
     m.classList.remove('hidden');
     const close = () => m.classList.add('hidden');
     this.$('mClose').onclick = close;
     this.$('mBack').onclick = close;
     m.onclick = (e) => { if (e.target === m) close(); };
+  },
+
+  /** Konec hry – všichni kolonisté zemřeli. */
+  gameOver() {
+    const m = this.$('modal'), st = Game.stats;
+    const days = TimeSys.day;
+    m.innerHTML = `<div class="mbox help"><div class="mhead"><b>Kolonie zanikla</b></div>
+      <div class="hbody">
+      <p>Poslední kolonista zemřel ${days}. dne (${TimeSys.seasonName.toLowerCase()}, rok ${TimeSys.year}).</p>
+      <table class="ttab">
+        <tr><td>Přežité dny</td><td>${days}</td></tr>
+        <tr><td>Postavené stavby</td><td>${st.built}</td></tr>
+        <tr><td>Pokácené stromy</td><td>${st.chopped}</td></tr>
+        <tr><td>Vytěžené skály</td><td>${st.mined}</td></tr>
+        <tr><td>Sklizeno potravin</td><td>${st.harvested}</td></tr>
+        <tr><td>Uvařená jídla</td><td>${st.cooked}</td></tr>
+        <tr><td>Příchozí kolonisté</td><td>${st.joined}</td></tr>
+      </table>
+      <h4>Padlí</h4>
+      <ul>${st.deaths.map(d => `<li>${d.name} – ${d.day}. den, ${d.cause}</li>`).join('')}</ul>
+      </div><div class="menu"><button id="mNewGame">Nová kolonie</button></div></div>`;
+    m.classList.remove('hidden');
+    m.onclick = null;
+    this.$('mNewGame').onclick = () => Main.boot(null);
   },
 
   // ---------- Notifikace ----------
@@ -394,7 +457,11 @@ const UI = {
     const d = TimeSys.daylight();
     this.$('sunIcon').textContent = d > 0.5 ? '☀️' : d > 0.05 ? '🌅' : '🌙';
     const wd = Weather.def;
-    this.$('weatherLabel').textContent = `${Weather.cur === 'clear' && d < 0.3 ? '✨' : wd.icon} ${wd.name}`;
+    const temp = TimeSys.temp();
+    this.$('weatherLabel').textContent = `${Weather.cur === 'clear' && d < 0.3 ? '✨' : (temp < 0 && wd.snowName ? '🌨️' : wd.icon)} ${temp < 0 && wd.snowName ? wd.snowName : wd.name}`;
+    const sl = this.$('seasonLabel');
+    sl.textContent = `${TimeSys.seasonName} ${Math.round(temp)}°C`;
+    sl.className = 's' + TimeSys.season;
     const counts = World.countItems();
     for (const k of ITEM_ORDER) this.$('res-' + k).textContent = counts[k];
     this.updateColonistBar();
