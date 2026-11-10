@@ -69,6 +69,7 @@ const Save = {
       pollution: Pollution.pack(),
       trade: Trade.pack(),
       combat: Combat.pack(),
+      carts: Carts.pack(),
       peaceful: Game.peaceful, difficulty: Game.difficulty,
       colonists: Game.colonists.map(c => this.packColonist(c)),
     };
@@ -81,7 +82,7 @@ const Save = {
       id: c.id, gender: c.gender, first: c.first, last: c.last, look: c.look, trait: c.trait.id, age: c.age,
       x: c.x, y: c.y, dir: c.dir, skills, priorities: c.priorities,
       hunger: c.hunger, energy: c.energy, mood: c.mood, health: c.health, thoughts: c.thoughts,
-      carry: c.carry, breakUntil: c.breakUntil, warmth: c.warmth, coat: c.coat, bow: c.bow,
+      carry: c.carry, breakUntil: c.breakUntil, warmth: c.warmth, coat: c.coat, bow: c.bow, rel: c.rel,
     };
   },
   unpackColonist(d) {
@@ -101,6 +102,7 @@ const Save = {
     c.breakUntil = d.breakUntil || 0;
     c.warmth = d.warmth !== undefined ? d.warmth : 100;
     c.coat = !!d.coat; c.bow = !!d.bow;
+    c.rel = d.rel || {};
     if (!World.canWalk(c.tx, c.ty)) { const p = World.nearestWalkable(c.tx, c.ty); c.x = p.x + 0.5; c.y = p.y + 0.5; }
     return c;
   },
@@ -146,6 +148,7 @@ const Save = {
     Pollution.unpack(d.pollution);
     Trade.unpack(d.trade);
     Combat.unpack(d.combat);
+    Carts.unpack(d.carts);
     Game.peaceful = !!d.peaceful; Game.difficulty = d.difficulty || 'normal';
     Power.reset();
     Game.tickCount = d.tick || 0;

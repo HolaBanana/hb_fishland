@@ -7,7 +7,7 @@ const UI = {
   TABS: [
     { id: 'orders', label: 'Příkazy', icon: 'chop', tools: ['select', 'chop', 'mine', 'harvest', 'hunt', 'decon', 'cancel'] },
     { id: 'build', label: 'Stavba', icon: 'wall_wood', tools: ['wall_wood', 'wall_stone', 'door', 'floor_wood', 'floor_stone', 'bed', 'campfire', 'table', 'chair', 'chest', 'lamp'] },
-    { id: 'prod', label: 'Výroba', icon: 'belt', tools: ['saw', 'furnace', 'tailor', 'armory', 'research', 'belt', 'drill', 'autosaw', 'autofurnace', 'pole', 'waterwheel', 'windmill', 'boiler', 'turret', 'gate'],
+    { id: 'prod', label: 'Výroba', icon: 'belt', tools: ['saw', 'furnace', 'tailor', 'armory', 'research', 'belt', 'splitter', 'sorter', 'tunnel', 'rail', 'cartstop', 'drill', 'autosaw', 'autofurnace', 'pole', 'waterwheel', 'windmill', 'boiler', 'turret', 'gate'],
       actions: [{ icon: 'research_btn', label: 'Výzkum', run: () => UI.openResearch() }, { icon: 'power_btn', label: 'Energie', run: () => UI.openPower() },
         { icon: 'pollution_btn', label: 'Znečištění', run: () => { Pollution.show = !Pollution.show; UI.toast(Pollution.show ? 'Vrstva znečištění zapnuta (fialová = špinavý vzduch).' : 'Vrstva znečištění vypnuta.', 'info'); } }] },
     { id: 'zones', label: 'Zóny', icon: 'zone_farm', tools: ['zone_stock', 'zone_farm', 'zone_pasture', 'coop', 'sheepfold', 'zone_clear'] },
@@ -245,6 +245,7 @@ const UI = {
         <div id="pNeeds"></div>
         <div class="psec">Dovednosti</div><div id="pSkills"></div>
         <div class="psec">Nálada – vlivy</div><div id="pThoughts" class="thoughts"></div>
+        <div class="psec">Vztahy</div><div id="pRel" class="thoughts"></div>
         <div class="pbtns"><button id="pFollow">Sledovat</button><button id="pPrio">Priority práce</button></div>`;
       this.$('infoClose').onclick = () => Game.select(null);
       this.$('pFollow').onclick = () => { Camera.follow = Camera.follow === c ? null : c; };
@@ -266,6 +267,10 @@ const UI = {
       sk += `<div class="skill"><span>${SKILLS[k]}</span><div class="sbar"><i style="width:${s.lvl / 20 * 100}%"></i><u style="width:${pct}%"></u></div><b>${s.lvl}</b></div>`;
     }
     this.$('pSkills').innerHTML = sk;
+    this.$('pRel').innerHTML = Game.colonists.filter(o => o !== c).map(o => {
+      const v = Math.round(c.rel[o.id] || 0);
+      return `<div class="th ${v >= 12 ? 'pos' : v <= -12 ? 'neg' : ''}"><span>${o.first} – ${Social.label(v)}</span><b>${v > 0 ? '+' : ''}${v}</b></div>`;
+    }).join('') || '<div class="th"><span>Je tu sám/sama.</span></div>';
     this.$('pThoughts').innerHTML = c.moodFactors().map(f =>
       `<div class="th ${f.val >= 0 ? 'pos' : 'neg'}"><span>${f.label}</span><b>${f.val > 0 ? '+' : ''}${f.val}</b></div>`).join('');
   },
@@ -324,6 +329,13 @@ const UI = {
       const net = Power.netOf.get(st.i);
       if (m.power) rows.push(['Energie', net ? `odběr ${m.power} ⚡, síť ${net.supply}/${net.demand} ⚡` : `potřebuje ${m.power} ⚡ – není v dosahu zdroje ani sloupu`]);
       else if (m.gen || m.pole) rows.push(['Síť', net ? `výroba ${net.supply} ⚡, spotřeba ${net.demand} ⚡, strojů ${net.users.length}` : '–']);
+      if (m.kind === 'sorter') {
+        machineHtml = `<div class="psec">Která surovina jede rovně</div><div class="filters">` +
+          `<button class="fbtn ${!st.filter ? 'on' : ''}" data-act="sf:">Vše</button>` +
+          ITEM_KEYS.map(k => `<button class="fbtn ${st.filter === k ? 'on' : ''}" data-act="sf:${k}">${this.imgTag(k)}<span>${ITEMS[k].name}</span></button>`).join('') + '</div>';
+      }
+      if (m.stop) machineHtml = `<div class="pbtns"><button data-act="stop">Přepnout na ${st.unload ? 'nakládání' : 'vykládání'}</button></div>
+        <div class="mnote">Nakládací zastávka má vlastní vozík, který vozí hromádky z políček vedle ní k nejbližší vykládací zastávce na stejných kolejích.</div>`;
       if (m.manual && m.recipe) {
         const outType = Object.keys(m.recipe.out)[0];
         machineHtml = `<div class="psec">Vyrábět, dokud je ve skladu méně než</div>
@@ -367,12 +379,14 @@ const UI = {
     p.onpointerdown = (e) => {
       const act = e.target.closest && e.target.closest('[data-act]');
       if (!act) return;
-      const cur = World.struct[i];
-      if (cur && cur.target !== undefined) {
-        cur.target = U.clamp(cur.target + (act.dataset.act === 't10' ? 10 : -10), 0, 500);
-        p.dataset.kind = '';
-        this.tileInfo(p, x, y);
-      }
+      const cur = World.struct[i], a = act.dataset.act;
+      if (!cur) return;
+      if (a.startsWith('sf:')) cur.filter = a.slice(3) || null;
+      else if (a === 'stop') { cur.unload = !cur.unload; Carts.sync(); }
+      else if (cur.target !== undefined && (a === 't10' || a === 't-10')) cur.target = U.clamp(cur.target + (a === 't10' ? 10 : -10), 0, 500);
+      else return;
+      p.dataset.kind = '';
+      this.tileInfo(p, x, y);
     };
     if (filterHtml) {
       const region = World.stockRegion(i);

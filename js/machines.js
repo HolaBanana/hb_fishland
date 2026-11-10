@@ -133,7 +133,7 @@ const Machines = {
       const s = World.struct[i];
       if (!s || s.decon) continue;
       const m = BUILD[s.type].machine;
-      if (m.manual || m.pole) continue;
+      if (m.manual || m.pole || m.rail || m.stop) continue;
       if (m.turret) { if (t % this.PULL_PERIOD === 0) this.pull(s); continue; }
       if (m.gen) { if (m.fuel && t % this.PULL_PERIOD === 0) this.pull(s); continue; }
       if (s.broken) { s.on = false; s.want = false; continue; }
@@ -181,10 +181,38 @@ const Machines = {
       const it = World.items[i];
       if (!it || got.has(i)) continue;
       const s = World.struct[i];
-      const front = World.step(i, s.dir);
-      const k = this.pushTo(front, it.type, Math.min(it.n, Config.BELT_RATE), it.age);
-      if (k > 0) { World.takeItem(i, k); got.add(front); }
+      const n = Math.min(it.n, Config.BELT_RATE);
+      const kind = BUILD[s.type].machine.kind;
+      let targets;
+      if (kind === 'splitter') {
+        // střídavě rovně, vpravo, vlevo; obsazený směr se přeskočí
+        const opts = [s.dir, (s.dir + 1) % 4, (s.dir + 3) % 4], r = s.rr || 0;
+        targets = [0, 1, 2].map(k => World.step(i, opts[(r + k) % 3]));
+      } else if (kind === 'sorter') {
+        targets = [World.step(i, !s.filter || it.type === s.filter ? s.dir : (s.dir + 1) % 4)];
+      } else if (kind === 'tunnel') {
+        targets = [this.tunnelExit(i, s.dir)];
+      } else targets = [World.step(i, s.dir)];
+      for (let q = 0; q < targets.length; q++) {
+        const k = this.pushTo(targets[q], it.type, n, it.age);
+        if (k > 0) {
+          World.takeItem(i, k); got.add(targets[q]);
+          if (kind === 'splitter') s.rr = ((s.rr || 0) + q + 1) % 3;
+          break;
+        }
+      }
     }
+  },
+  /** Výjezd podzemního pásu: další tunel stejného směru do 6 políček, jinak políčko před vjezdem. */
+  tunnelExit(i, dir) {
+    let q = i;
+    for (let d = 1; d <= 6; d++) {
+      q = World.step(q, dir);
+      if (q < 0) break;
+      const s = World.struct[q];
+      if (d >= 2 && s && s.type === 'tunnel' && s.dir === dir) return q;
+    }
+    return World.step(i, dir);
   },
 
   /** Popis stavu stroje pro informační panel. */
@@ -193,7 +221,9 @@ const Machines = {
     if (!m) return '';
     if (m.manual) return this.canCraft(s) ? 'Čeká na řemeslníka' : 'Čeká na suroviny';
     if (m.gen) return Power.genStatus(s);
-    if (m.belt) return 'Směr ' + ['→', '↓', '←', '↑'][s.dir];
+    if (m.belt) return 'Směr ' + ['→', '↓', '←', '↑'][s.dir] + (m.kind === 'sorter' ? `, rovně pouští: ${s.filter ? ITEMS[s.filter].name.toLowerCase() : 'vše'}` : '');
+    if (m.rail) return 'Kolej';
+    if (m.stop) { const c = Carts.list.find(q => q.home === s.i); return s.unload ? 'Vykládací zastávka' : 'Nakládací zastávka' + (c ? ` – vozík ${{ load: 'nakládá', go: 'jede', unload: 'vykládá', back: 'se vrací' }[c.state]}` + (c.cargo ? ` (${ITEMS[c.cargo.type].name.toLowerCase()} ${c.cargo.n})` : '') : ''); }
     if (m.pole) return 'Vede energii';
     if (s.broken) return 'Porucha – čeká na opravu (1 železný plát)';
     if (m.turret) return (s.inv.ammo || 0) >= 1 ? `Připravena, munice ${Math.floor(s.inv.ammo)}` : 'Bez munice';

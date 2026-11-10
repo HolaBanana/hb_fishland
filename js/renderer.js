@@ -59,8 +59,8 @@ const Renderer = {
   buildSprite(type, wx, wy, dir) {
     const def = BUILD[type], [fw, fh] = this.sizeOf(type, dir);
     if (def.machine && def.machine.belt) {
-      this.imgRot(Sprites.build.belt, wx, wy, fw, fh, dir);
-      this.imgRot(Sprites.beltArrow[Game.speed > 0 ? Math.floor(this.time * 6) % 3 : 0], wx, wy, fw, fh, dir);
+      this.imgRot(Sprites.build[type], wx, wy, fw, fh, dir);
+      if (!def.machine.kind) this.imgRot(Sprites.beltArrow[Game.speed > 0 ? Math.floor(this.time * 6) % 3 : 0], wx, wy, fw, fh, dir);
     } else if (def.size) this.imgRot(Sprites.build[type], wx, wy, fw, fh, dir & 1);
     else this.img(Sprites.build[type], wx, wy, fw, fh);
     if (def.rot && def.machine && !def.machine.belt) this.imgRot(Sprites.arrow, wx + 4, wy + 4, 8, 8, dir);
@@ -138,8 +138,16 @@ const Renderer = {
         const bp = World.bp[i];
         if (bp && BUILD[bp.type].layer === 'floor') this.drawBlueprint(bp, wx, wy);
         const st = World.struct[i];
-        if (st && BUILD[st.type].machine && BUILD[st.type].machine.belt) {
-          this.buildSprite(st.type, wx, wy, st.dir);
+        const sm = st && BUILD[st.type].machine;
+        if (sm && (sm.belt || sm.rail || sm.stop)) {
+          if (sm.belt) this.buildSprite(st.type, wx, wy, st.dir);
+          else {
+            // kolej se natočí podle sousedních kolejí
+            const vert = (Carts.isTrack(i - W) || Carts.isTrack(i + W)) && !(Carts.isTrack(i - 1) || Carts.isTrack(i + 1));
+            this.imgRot(Sprites.build[st.type], wx, wy, TS, TS, vert ? 1 : 0);
+            if (sm.stop) this.rect(wx + 5, wy + 6, 6, 4, st.unload ? '#ff8a4c' : '#7ee07e');
+          }
+          if (sm.kind === 'sorter' && st.filter) this.img(Sprites.items[st.filter], wx + 4, wy + 4, 8, 8);
           if (st.decon) this.img(Sprites.des.decon, wx + 4, wy + 4, 8, 8);
         }
         if (showGrid) {
@@ -177,6 +185,7 @@ const Renderer = {
       let wx = x * TS, wy = y * TS;
       const bs = World.struct[y * W + x];
       if (bs && BUILD[bs.type].machine && BUILD[bs.type].machine.belt) {
+        if (bs.type === 'tunnel') continue;   // pod zemí není vidět
         // hromádka na pásu plynule klouže ve směru pásu
         const ph = Game.speed > 0 ? (Game.tickCount % Config.BELT_PERIOD) / Config.BELT_PERIOD - 0.5 : 0;
         this.img(Sprites.items[it.type], wx + 3 + DIRS4[bs.dir][0] * ph * TS, wy + 2 + DIRS4[bs.dir][1] * ph * TS, 10, 10);
@@ -234,9 +243,13 @@ const Renderer = {
         const o = World.obj[i];
         if (o) this.drawObj(o, i, x, y, wx, wy);
         const s = World.struct[i];
-        if (s && s.i === i && !(BUILD[s.type].machine && BUILD[s.type].machine.belt)) this.drawStruct(s, i, x, y, wx, wy);
+        if (s && s.i === i && !(BUILD[s.type].machine && (BUILD[s.type].machine.belt || BUILD[s.type].machine.rail || BUILD[s.type].machine.stop))) this.drawStruct(s, i, x, y, wx, wy);
         const bp = World.bp[i];
         if (bp && bp.i === i && BUILD[bp.type].layer === 'struct') this.drawBlueprint(bp, wx, wy);
+      }
+      for (const c of Carts.list) if (Math.floor(c.y) === y) {
+        this.img(Sprites.cart, c.x * TS - 7, c.y * TS - 7, 14, 12);
+        if (c.cargo) this.img(Sprites.items[c.cargo.type], c.x * TS - 4, c.y * TS - 10, 8, 8);
       }
       for (const a of Animals.list) if (Math.floor(a.y) === y) this.drawAnimal(a);
       for (const r of Combat.raiders) if (Math.floor(r.y) === y) this.drawRaider(r);

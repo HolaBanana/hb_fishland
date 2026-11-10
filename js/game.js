@@ -44,7 +44,7 @@ const Game = {
     this.colonists = createColonists(World.start);
     this.nextId = this.colonists.length;
     Weather.reset();
-    Events.reset(); Trade.reset(); Combat.reset();
+    Events.reset(); Trade.reset(); Combat.reset(); Carts.reset();
     Camera.zoom = Config.ZOOM_DEFAULT;
     Camera.centerTile(World.start.x, World.start.y + 1);
   },
@@ -159,6 +159,7 @@ const Game = {
     for (const i of World.structBy.bed || []) if (World.struct[i].owner === c.id) World.struct[i].owner = -1;
     this.colonists = this.colonists.filter(q => q !== c);
     this.stats.deaths.push({ name: c.name, day: TimeSys.day, cause });
+    Social.onDeath(c);
     if (this.selected && this.selected.c === c) this.select(null);
     if (Camera.follow === c) Camera.follow = null;
     UI.buildColonistBar();
@@ -229,7 +230,7 @@ const Game = {
     this.tickCount++;
     const hourBefore = TimeSys.lastHour;
     TimeSys.tick();
-    if (TimeSys.lastHour !== hourBefore) { Events.hourly(); Animals.hourly(); Trade.hourly(); Combat.hourly(); Save.auto(); }   // jednou za herní hodinu
+    if (TimeSys.lastHour !== hourBefore) { Events.hourly(); Animals.hourly(); Trade.hourly(); Combat.hourly(); Social.hourly(); Save.auto(); }   // jednou za herní hodinu
     Weather.tick();
     if (this.tickCount % 30 === 0) {
       const hours = 30 * Config.HOURS_PER_TICK;
@@ -240,6 +241,7 @@ const Game = {
     Machines.tick();
     if (this.tickCount % 60 === 0) Pollution.update();
     Combat.tick();
+    Carts.tick();
     Animals.tick();
     for (const c of this.colonists.slice()) c.tick();
   },

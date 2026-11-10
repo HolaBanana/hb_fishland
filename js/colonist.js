@@ -37,6 +37,7 @@ class Colonist {
     this.mood = 60;
     this.moodTarget = 60;
     this.thoughts = [];
+    this.rel = {};           // vztahy: id kolonisty → -100..100
 
     this.job = null;
     this.path = null; this.pathI = 0; this.dest = null;
@@ -106,6 +107,7 @@ class Colonist {
     if (pol > 0.6) out.push({ label: 'Dusí se kouřem', val: -8 });
     else if (pol > 0.25) out.push({ label: 'Znečištěný vzduch', val: -4 });
     if (Combat.raiders.length) out.push({ label: 'Nájezd na kolonii', val: -5 });
+    for (const f of Social.mood(this)) out.push(f);
     if (World.floor[here]) out.push({ label: 'Pěkné prostředí', val: 2 });
     if (TimeSys.daylight() < 0.4 && Game.nearLight(this.tx, this.ty)) out.push({ label: 'Teplo a světlo ohně', val: 3 });
     if (Weather.cur === 'clear' && TimeSys.daylight() > 0.8) out.push({ label: 'Krásný den', val: 2 });

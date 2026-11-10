@@ -504,6 +504,37 @@ const Sprites = (() => {
         for (let d = 0; d < 4; d++) { set(x0 + d, 4 + d, [226, 190, 80]); set(x0 + d, 11 - d, [226, 190, 80]); }
       }
     }));
+    const beltBase = (fn) => paint(16, 16, (set, get, rect) => {
+      rect(0, 2, 16, 12, [58, 60, 68]); rect(0, 1, 16, 1, metalL); rect(0, 14, 16, 1, metalD);
+      fn(set, rect);
+    });
+    const arr = (set, x0, y0, dx, dy, c) => { for (let d = 0; d < 3; d++) { set(x0 - d * dx - d * dy, y0 - d * dy - d * dx, c); set(x0 - d * dx + d * dy, y0 - d * dy + d * dx, c); } };
+    S.build.splitter = beltBase((set, rect) => {
+      rect(5, 5, 6, 6, [90, 96, 110]); rect(5, 5, 6, 1, metalL);
+      arr(set, 14, 8, 1, 0, [120, 220, 140]); arr(set, 8, 13, 0, 1, [120, 220, 140]); arr(set, 8, 2, 0, -1, [120, 220, 140]);
+    });
+    S.build.sorter = beltBase((set, rect) => {
+      rect(5, 4, 6, 8, [70, 90, 130]); rect(5, 4, 6, 1, [130, 160, 210]);
+      arr(set, 14, 8, 1, 0, [255, 220, 90]); arr(set, 8, 13, 0, 1, [200, 200, 210]);
+    });
+    S.build.tunnel = beltBase((set, rect) => {
+      rect(6, 3, 10, 10, [30, 28, 30]); rect(6, 3, 1, 10, metalL); rect(6, 3, 10, 1, metalL); rect(6, 12, 10, 1, metalD);
+      arr(set, 4, 8, 1, 0, [226, 190, 80]);
+    });
+    S.build.rail = paint(16, 16, (set, get, rect) => {
+      for (const x of [1, 5, 9, 13]) rect(x, 3, 2, 10, [110, 78, 46]);
+      rect(0, 4, 16, 1, metalL); rect(0, 5, 16, 1, metalD); rect(0, 10, 16, 1, metalL); rect(0, 11, 16, 1, metalD);
+    });
+    S.build.cartstop = paint(16, 16, (set, get, rect) => {
+      rect(0, 0, 16, 16, [96, 90, 84]); rect(0, 0, 16, 1, [140, 134, 126]); rect(0, 15, 16, 1, [60, 56, 52]);
+      rect(0, 4, 16, 1, metalL); rect(0, 5, 16, 1, metalD); rect(0, 10, 16, 1, metalL); rect(0, 11, 16, 1, metalD);
+      rect(1, 1, 3, 2, [255, 220, 90]); rect(12, 13, 3, 2, [255, 220, 90]);
+    });
+    S.cart = outline(paint(14, 12, (set, get, rect) => {
+      rect(1, 2, 12, 6, [150, 104, 60]); rect(1, 2, 12, 1, [186, 138, 86]); rect(1, 7, 12, 1, [100, 66, 38]);
+      rect(1, 2, 1, 6, metalD); rect(12, 2, 1, 6, metalD);
+      for (const cx of [3, 10]) for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) if (Math.hypot(x, y) < 2.3) set(cx + x, 9 + y, Math.hypot(x, y) < 1 ? metalL : [50, 46, 44]);
+    }));
     S.build.drill = outline(paint(16, 16, (set, get, rect) => {
       rect(2, 2, 12, 9, metal); rect(2, 2, 12, 1, metalL); rect(2, 10, 12, 1, metalD);
       rect(4, 4, 8, 4, [58, 60, 68]); rect(5, 5, 2, 2, [250, 214, 110]);
