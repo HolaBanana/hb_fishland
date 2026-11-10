@@ -133,8 +133,10 @@ const Machines = {
       const s = World.struct[i];
       if (!s || s.decon) continue;
       const m = BUILD[s.type].machine;
-      if (m.manual || m.pole || m.turret) continue;
+      if (m.manual || m.pole) continue;
+      if (m.turret) { if (t % this.PULL_PERIOD === 0) this.pull(s); continue; }
       if (m.gen) { if (m.fuel && t % this.PULL_PERIOD === 0) this.pull(s); continue; }
+      if (s.broken) { s.on = false; s.want = false; continue; }
       // --- automatický stroj ---
       if (t % this.PULL_PERIOD === 0) { this.pull(s); this.eject(s); }
       let outN = 0;
@@ -193,10 +195,31 @@ const Machines = {
     if (m.gen) return Power.genStatus(s);
     if (m.belt) return 'Směr ' + ['→', '↓', '←', '↑'][s.dir];
     if (m.pole) return 'Vede energii';
+    if (s.broken) return 'Porucha – čeká na opravu (1 železný plát)';
+    if (m.turret) return (s.inv.ammo || 0) >= 1 ? `Připravena, munice ${Math.floor(s.inv.ammo)}` : 'Bez munice';
     return s.msg || '';
   },
 };
 
-/** Zástupné systémy, které plně přijdou později (znečištění, údržba). */
-const Pollution = { add() {} };
-const Maintenance = { wear() {} };
+/**
+ * Maintenance – opotřebení strojů. Provozem se stroj opotřebovává; při nulovém
+ * stavu se zastaví a kolonista ho musí opravit (práce Údržba, 1 železný plát).
+ */
+const Maintenance = {
+  LIFE: 260,                 // výrobků do poruchy
+  GEN_TICKS: 600 * 24 * 6,   // doba provozu zdroje do poruchy
+  add(s, amt) {
+    s.wear = (s.wear || 0) + amt;
+    if (s.wear >= 1 && !s.broken) {
+      s.broken = true; s.on = false;
+      s.msg = 'Porucha – čeká na opravu (1 železný plát)';
+      Power.dirty = true;
+      Game.alert(`Porucha: ${BUILD[s.type].name.toLowerCase()} potřebuje opravu.`, 'warn', s.i % World.w, (s.i / World.w) | 0);
+    }
+  },
+  wear(s) { this.add(s, 1 / this.LIFE); },
+  wearTime(s, ticks) { this.add(s, ticks / this.GEN_TICKS); },
+  repair(s) { s.wear = 0; s.broken = false; s.msg = ''; Power.dirty = true; },
+  /** Stav 0..1 (1 = jako nový). */
+  condition(s) { return 1 - Math.min(1, s.wear || 0); },
+};

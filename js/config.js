@@ -113,6 +113,15 @@ const BUILD = {
               machine: { manual: true, recipe: { in: { wool: 3 }, out: { coat: 1 }, work: 160 }, alts: [{ in: { leather: 3 }, out: { coat: 1 }, work: 160 }], target: 4 },
               hint: 'Šije teplé oblečení z vlny nebo kůže. Bez něj kolonisté v zimě venku prochladnou.' },
 
+  armory:   { name: 'Zbrojnice',       layer: 'struct', cost: { plank: 15, iron: 6 }, work: 150, blocks: true, mode: 'single', tech: 'defense',
+              machine: { manual: true, recipe: { in: { plank: 3, iron: 1 }, out: { bow: 1 }, work: 170 }, alts: [{ in: { iron: 1 }, out: { ammo: 8 }, work: 70, target: 60 }], target: 4 },
+              hint: 'Vyrábí kuše pro kolonisty a munici do střílen.' },
+  turret:   { name: 'Střílna',         layer: 'struct', cost: { iron: 14, plank: 6 }, work: 180, blocks: true, mode: 'single', tech: 'defense',
+              machine: { turret: true, ammo: 'ammo' },
+              hint: 'Sama střílí po nájezdnících v dosahu 7 políček. Munici bere ze sousedních políček nebo z pásu.' },
+  gate:     { name: 'Brána',           layer: 'struct', cost: { plank: 6, iron: 4 }, work: 140, door: true, walkCost: 1.3, mode: 'single', tech: 'defense',
+              hint: 'Pevné dveře do hradeb. Kolonisty pustí, nájezdníci ji musí prorazit.' },
+
   // ----- chov -----
   coop:     { name: 'Kurník',          layer: 'struct', cost: { plank: 8, wood: 10 }, work: 110, blocks: true, burns: true, mode: 'single',
               livestock: { type: 'chicken', start: 3, cap: 8 },
@@ -162,6 +171,7 @@ const TECHS = {
   wind:        { name: 'Větrná energie',    cost: 90,  req: ['water'],          desc: 'Větrník – energie i daleko od vody.' },
   steam:       { name: 'Parní síla',        cost: 140, req: ['water'],          desc: 'Kotel na dřevo – výkon za každého počasí.' },
   autofurnace: { name: 'Pec s podavačem',   cost: 170, req: ['drill'],          desc: 'Tavení rudy bez obsluhy.' },
+  defense:     { name: 'Obrana',            cost: 100, req: ['belts'],          desc: 'Zbrojnice, střílny a brány.' },
   colony:      { name: 'Soběstačná kolonie', cost: 260, req: ['autosaw', 'wind', 'steam', 'autofurnace'], desc: 'Završení výzkumu – cíl hry.' },
 };
 
@@ -174,6 +184,7 @@ const WORK_TYPES = [
   { id: 'hunt',  name: 'Lov',       short: 'Lov',   skill: 'hunt' },
   { id: 'chop',  name: 'Kácení',    short: 'Kác.',  skill: 'chop' },
   { id: 'mine',  name: 'Těžba',     short: 'Těž.',  skill: 'mine' },
+  { id: 'maintain', name: 'Údržba', short: 'Údr.',  skill: 'craft' },
   { id: 'research', name: 'Výzkum', short: 'Výz.',  skill: 'research' },
   { id: 'haul',  name: 'Nošení',    short: 'Noš.',  skill: null },
 ];

@@ -66,6 +66,10 @@ const Save = {
       stats: Game.stats,
       nextId: Game.nextId,
       research: Research.pack(),
+      pollution: Pollution.pack(),
+      trade: Trade.pack(),
+      combat: Combat.pack(),
+      peaceful: Game.peaceful, difficulty: Game.difficulty,
       colonists: Game.colonists.map(c => this.packColonist(c)),
     };
   },
@@ -139,6 +143,10 @@ const Save = {
     Animals.unpack(d.animals);
     Events.unpack(d.events);
     Research.unpack(d.research);
+    Pollution.unpack(d.pollution);
+    Trade.unpack(d.trade);
+    Combat.unpack(d.combat);
+    Game.peaceful = !!d.peaceful; Game.difficulty = d.difficulty || 'normal';
     Power.reset();
     Game.tickCount = d.tick || 0;
     Game.lastSpeed = d.speed || 1;

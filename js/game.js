@@ -15,6 +15,8 @@ const Game = {
   speed: 1,
   lastSpeed: 1,
   autoFast: false,       // zrychlit čas, když všichni kolonisté spí
+  peaceful: false,       // mírumilovný režim – bez nájezdů
+  difficulty: 'normal',  // easy | normal | hard
   fastNow: false,        // právě běží automatické zrychlení
   tool: 'select',
   pending: null,         // výběr čekající na potvrzení {tool,x0,y0,x1,y1,dir}
@@ -38,11 +40,11 @@ const Game = {
     this.alerts = [];
     this.shots = [];
     this.stats = { built: 0, chopped: 0, mined: 0, cooked: 0, harvested: 0, cropsEaten: 0, joined: 0, crafted: 0, machined: 0, deaths: [] };
-    Fire.reset(); Animals.reset(); Power.reset(); Research.reset();
+    Fire.reset(); Animals.reset(); Power.reset(); Research.reset(); Pollution.reset();
     this.colonists = createColonists(World.start);
     this.nextId = this.colonists.length;
     Weather.reset();
-    Events.reset();
+    Events.reset(); Trade.reset(); Combat.reset();
     Camera.zoom = Config.ZOOM_DEFAULT;
     Camera.centerTile(World.start.x, World.start.y + 1);
   },
@@ -187,6 +189,10 @@ const Game = {
     UI.updateSpeed();
   },
   togglePause() { this.setSpeed(this.speed === 0 ? this.lastSpeed : 0); },
+  setPeaceful(on) {
+    this.peaceful = !!on;
+    if (on && Combat.raiders.length) { for (const r of Combat.raiders) r.flee(); }
+  },
   setAutoFast(on) {
     this.autoFast = !!on;
     try { localStorage.setItem('kolonie.autoFast', on ? '1' : '0'); } catch (e) { /* bez úložiště */ }
@@ -223,7 +229,7 @@ const Game = {
     this.tickCount++;
     const hourBefore = TimeSys.lastHour;
     TimeSys.tick();
-    if (TimeSys.lastHour !== hourBefore) { Events.hourly(); Animals.hourly(); Save.auto(); }   // jednou za herní hodinu
+    if (TimeSys.lastHour !== hourBefore) { Events.hourly(); Animals.hourly(); Trade.hourly(); Combat.hourly(); Save.auto(); }   // jednou za herní hodinu
     Weather.tick();
     if (this.tickCount % 30 === 0) {
       const hours = 30 * Config.HOURS_PER_TICK;
@@ -232,6 +238,8 @@ const Game = {
     }
     if (this.tickCount % 10 === 0) Power.update(10);
     Machines.tick();
+    if (this.tickCount % 60 === 0) Pollution.update();
+    Combat.tick();
     Animals.tick();
     for (const c of this.colonists.slice()) c.tick();
   },

@@ -7,8 +7,9 @@ const UI = {
   TABS: [
     { id: 'orders', label: 'Příkazy', icon: 'chop', tools: ['select', 'chop', 'mine', 'harvest', 'hunt', 'decon', 'cancel'] },
     { id: 'build', label: 'Stavba', icon: 'wall_wood', tools: ['wall_wood', 'wall_stone', 'door', 'floor_wood', 'floor_stone', 'bed', 'campfire', 'table', 'chair', 'chest', 'lamp'] },
-    { id: 'prod', label: 'Výroba', icon: 'belt', tools: ['saw', 'furnace', 'tailor', 'research', 'belt', 'drill', 'autosaw', 'autofurnace', 'pole', 'waterwheel', 'windmill', 'boiler'],
-      actions: [{ icon: 'research_btn', label: 'Výzkum', run: () => UI.openResearch() }, { icon: 'power_btn', label: 'Energie', run: () => UI.openPower() }] },
+    { id: 'prod', label: 'Výroba', icon: 'belt', tools: ['saw', 'furnace', 'tailor', 'armory', 'research', 'belt', 'drill', 'autosaw', 'autofurnace', 'pole', 'waterwheel', 'windmill', 'boiler', 'turret', 'gate'],
+      actions: [{ icon: 'research_btn', label: 'Výzkum', run: () => UI.openResearch() }, { icon: 'power_btn', label: 'Energie', run: () => UI.openPower() },
+        { icon: 'pollution_btn', label: 'Znečištění', run: () => { Pollution.show = !Pollution.show; UI.toast(Pollution.show ? 'Vrstva znečištění zapnuta (fialová = špinavý vzduch).' : 'Vrstva znečištění vypnuta.', 'info'); } }] },
     { id: 'zones', label: 'Zóny', icon: 'zone_farm', tools: ['zone_stock', 'zone_farm', 'zone_pasture', 'coop', 'sheepfold', 'zone_clear'] },
     { id: 'work', label: 'Práce', icon: 'priorities', action: () => UI.openPriorities() },
     { id: 'menu', label: 'Menu', icon: 'menu', action: () => UI.openMenu() },
@@ -47,6 +48,10 @@ const UI = {
     pw.title = 'Energie: výroba / spotřeba';
     pw.onclick = () => this.openPower();
     res.appendChild(pw);
+    const tr = this.el('div', 'res hidden trade', `${this.imgTag('trade_btn')}<span id="res-trade">Obchod</span>`);
+    tr.title = 'Obchodní karavana';
+    tr.onclick = () => this.openTrade();
+    res.insertBefore(tr, res.firstChild);
     const rs = this.el('div', 'res hidden', `${this.imgTag('research_btn')}<span id="res-research">0%</span>`);
     rs.title = 'Probíhající výzkum';
     rs.onclick = () => this.openResearch();
@@ -314,6 +319,8 @@ const UI = {
       if (m.fuel) rows.push(['Palivo', list(st.inv) + (st.burn > 0 ? ` (hoří ještě ${Math.ceil(st.burn)} min)` : '')]);
       if (m.recipe || m.drill) rows.push(['Výstup', list(st.out)]);
       if (m.drill && World.obj[st.i]) rows.push(['Ložisko', `zbývá ${World.obj[st.i].amount} ks rudy`]);
+      if (m.turret) rows.push(['Munice', Math.floor(st.inv.ammo || 0) + ' ks']);
+      if (st.wear !== undefined) rows.push(['Opotřebení', Math.round(Maintenance.condition(st) * 100) + ' % stavu']);
       const net = Power.netOf.get(st.i);
       if (m.power) rows.push(['Energie', net ? `odběr ${m.power} ⚡, síť ${net.supply}/${net.demand} ⚡` : `potřebuje ${m.power} ⚡ – není v dosahu zdroje ani sloupu`]);
       else if (m.gen || m.pole) rows.push(['Síť', net ? `výroba ${net.supply} ⚡, spotřeba ${net.demand} ⚡, strojů ${net.users.length}` : '–']);
@@ -418,6 +425,7 @@ const UI = {
           <button id="mExport">Exportovat hru do souboru</button>
           <button id="mImport">Importovat hru ze souboru</button>
           <button id="mAuto">Zrychlit čas, když všichni spí: <b class="${Game.autoFast ? 'on' : 'off'}">${Game.autoFast ? 'ZAP' : 'VYP'}</b></button>
+          <button id="mPeace">Mírumilovný režim (bez nájezdů): <b class="${Game.peaceful ? 'on' : 'off'}">${Game.peaceful ? 'ZAP' : 'VYP'}</b></button>
           <button id="mHelp">Nápověda a ovládání</button>
           <button id="mNew">Nová kolonie (nová mapa)</button>
         </div><p class="mnote">Hra se ukládá automaticky každou herní hodinu do tohoto prohlížeče. Semínko mapy: ${Game.seed}</p></div>`;
@@ -433,6 +441,7 @@ const UI = {
       this.$('mExport').onclick = () => { close(); Save.exportFile(); this.toast('Uložená hra se stahuje jako soubor.', 'good'); };
       this.$('mImport').onclick = () => { close(); this.$('importFile').click(); };
       this.$('mAuto').onclick = () => { Game.setAutoFast(!Game.autoFast); render(); };
+      this.$('mPeace').onclick = () => { Game.setPeaceful(!Game.peaceful); render(); };
       this.$('mHelp').onclick = () => this.openHelp();
       this.$('mNew').onclick = () => {
         if (confirm('Opravdu začít novou kolonii? Současná uložená hra bude přepsána.')) { Save.clear(); Main.boot(null); }
@@ -507,6 +516,50 @@ const UI = {
     this.$('mClose').onclick = close;
     this.$('mBack').onclick = close;
     m.onclick = (e) => { if (e.target === m) close(); };
+  },
+
+  // ---------- Obchod ----------
+  closeTrade() { const m = this.$('modal'); if (m.dataset.kind === 'trade') { m.classList.add('hidden'); m.dataset.kind = ''; } },
+  openTrade() {
+    const m = this.$('modal');
+    if (!Trade.active) { this.toast('Žádná karavana tu teď není.', 'info'); return; }
+    const sell = {}, buy = {};
+    const render = () => {
+      if (!Trade.active) { this.closeTrade(); return; }
+      const v = Trade.value(sell, buy);
+      const keys = ITEM_KEYS.filter(k => VALUE[k] && (Trade.have(k) > 0 || Trade.active.stock[k] > 0));
+      let h = `<div class="mbox wide"><div class="mhead"><b>Obchodní karavana</b><button class="x" id="mClose">✕</button></div>
+        <p class="mnote">Výměnný obchod: nabídni přebytky a vyber si zboží do stejné hodnoty. Karavana odjede ve ${U.pad2(Math.floor((Trade.active.until % 1440) / 60))}:00. Koupené zboží složí u startu kolonie.</p>
+        <div class="ptable"><table class="trade"><tr><th></th><th>Máš</th><th>Prodat</th><th>Mají</th><th>Koupit</th></tr>`;
+      for (const k of keys) {
+        const have = Trade.have(k), st = Trade.active.stock[k] || 0;
+        h += `<tr><td class="pname">${this.imgTag(k)} ${ITEMS[k].name}<small>${Trade.sellPrice(k).toFixed(1)} / ${Trade.buyPrice(k).toFixed(1)}</small></td>
+          <td>${have}</td>
+          <td class="step">${have ? `<button data-a="s-" data-k="${k}">−</button><b>${sell[k] || 0}</b><button data-a="s+" data-k="${k}">+</button>` : ''}</td>
+          <td>${st}</td>
+          <td class="step">${st ? `<button data-a="b-" data-k="${k}">−</button><b>${buy[k] || 0}</b><button data-a="b+" data-k="${k}">+</button>` : ''}</td></tr>`;
+      }
+      const ok = v.sell > 0 && v.buy <= v.sell + 0.001;
+      h += `</table></div>
+        <div class="tsum">Nabízíš za <b class="on">${v.sell.toFixed(0)}</b> · bereš za <b class="${v.buy > v.sell ? 'p1' : 'on'}">${v.buy.toFixed(0)}</b>${v.buy > v.sell ? ' – přidej zboží na prodej' : v.sell - v.buy >= 1 ? ` · ${(v.sell - v.buy).toFixed(0)} propadne` : ''}</div>
+        <div class="menu"><button id="tDeal" ${ok ? '' : 'disabled'}>Vyměnit</button></div></div>`;
+      m.innerHTML = h;
+      m.dataset.kind = 'trade';
+      m.classList.remove('hidden');
+      this.$('mClose').onclick = () => this.closeTrade();
+      this.$('tDeal').onclick = () => {
+        if (Trade.deal(sell, buy)) { this.toast('Obchod uzavřen. Zboží leží u startu kolonie.', 'good'); for (const k in sell) delete sell[k]; for (const k in buy) delete buy[k]; render(); }
+        else this.toast('Obchod se nepodařil – zkontroluj množství.', 'warn');
+      };
+      m.querySelectorAll('.step button').forEach(b => b.onclick = () => {
+        const k = b.dataset.k, a = b.dataset.a, step = VALUE[k] >= 10 ? 1 : 5;
+        const o = a[0] === 's' ? sell : buy, max = a[0] === 's' ? Trade.have(k) : (Trade.active.stock[k] || 0);
+        o[k] = U.clamp((o[k] || 0) + (a[1] === '+' ? step : -step), 0, max);
+        render();
+      });
+    };
+    m.onclick = (e) => { if (e.target === m) this.closeTrade(); };
+    render();
   },
 
   // ---------- Výzkum ----------
@@ -631,6 +684,7 @@ const UI = {
     pw.parentNode.classList.toggle('hidden', !Power.nets.length);
     pw.textContent = `${Power.supply}/${Power.demand}`;
     pw.parentNode.classList.toggle('low', Power.demand > Power.supply);
+    this.$('res-trade').parentNode.classList.toggle('hidden', !Trade.active);
     const rs = this.$('res-research');
     rs.parentNode.classList.toggle('hidden', !Research.current);
     if (Research.current) rs.textContent = Math.floor(Research.progress(Research.current) * 100) + '%';

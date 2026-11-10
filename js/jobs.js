@@ -177,6 +177,13 @@ const Jobs = (() => {
       }
       return out;
     },
+    maintain() {
+      const out = [];
+      if (!anyItem('iron')) return out;
+      for (const i of World.machines) { const s = World.struct[i]; if (s.broken && !s.decon) out.push({ type: 'repair', i, key: 'o' + i }); }
+      for (const i of World.structBy.turret || []) { const s = World.struct[i]; if (s.broken && !s.decon) out.push({ type: 'repair', i, key: 'o' + i }); }
+      return out;
+    },
     research() {
       const out = [];
       const tables = World.structBy.research;
@@ -498,6 +505,87 @@ const Jobs = (() => {
         World.dropItem(c.tx, c.ty, 'wool', a.def.wool);
         return DONE;
       }
+    },
+
+    /** Oprava porouchaného stroje: donést železný plát a opravit. */
+    repair(c, j) {
+      const s = World.struct[j.i];
+      if (!s || !s.broken) return DONE;
+      if (j.stage === 0) {
+        if (c.carry && c.carry.type === 'iron') j.stage = 2;
+        else {
+          const src = nearestItem(['iron'], c);
+          if (src < 0) return FAIL;
+          Game.reserveItem(src, 1, c);
+          j.src = src; j.stage = 1;
+        }
+      }
+      if (j.stage === 1) {
+        c.activity = 'Jde pro železný plát na opravu';
+        const r = walk(c, j, ix(j.src), iy(j.src), 0, 'i' + j.src);
+        if (r === 'fail') return FAIL;
+        if (r === 'moving') return;
+        if (!c.pickup(j.src, 1, 'iron')) return FAIL;
+        j.stage = 2;
+      }
+      if (j.stage === 2) {
+        c.activity = 'Jde opravit: ' + BUILD[s.type].name.toLowerCase();
+        const r = walk(c, j, ix(j.i), iy(j.i), 2);
+        if (r === 'fail') return FAIL;
+        if (r === 'moving') return;
+        j.stage = 3;
+      }
+      if (!c.carry || c.carry.type !== 'iron') return FAIL;
+      c.activity = 'Opravuje: ' + BUILD[s.type].name.toLowerCase();
+      c.face(ix(j.i), iy(j.i));
+      j.progress += c.work('craft');
+      c.workFrac = j.progress / 150;
+      if (j.progress >= 150) { c.carry = null; Maintenance.repair(s); Game.stats.repairs = (Game.stats.repairs || 0) + 1; return DONE; }
+    },
+
+    /** Boj: kolonista s kuší střílí po nájezdnících z dálky. */
+    fight(c, j) {
+      const r = Combat.nearest(c.x, c.y, 60);
+      if (!r) return DONE;
+      j.t = (j.t || 0) + 1;
+      const d = Math.hypot(r.x - c.x, r.y - c.y);
+      if (d > 6.5) {
+        c.activity = 'Běží bránit kolonii';
+        if (!c.path || j.t % 30 === 0) { if (!c.pathTo(r.tx, r.ty, 1)) { c.path = null; return j.t > 200 ? FAIL : undefined; } }
+        c.followPath();
+        return;
+      }
+      c.path = null;
+      c.activity = 'Střílí po nájezdnících';
+      c.face(r.tx, r.ty);
+      c.working = true;
+      if (++j.progress >= 45) {
+        j.progress = 0;
+        Game.shot(c.x, c.y - 0.4, r.x, r.y - 0.3, '#e8e2d0');
+        Sound.play('shot', c.x, c.y);
+        if (U.chance(0.55 + c.skills.hunt.lvl * 0.03)) Combat.hurt(r, 20);
+        c.gainXp('hunt', 1.5);
+      }
+    },
+
+    /** Útěk neozbrojeného kolonisty před nájezdníky. */
+    flee(c, j) {
+      const r = Combat.nearest(c.x, c.y, 8);
+      if (!r && j.stage > 0 && !c.path) return DONE;
+      if (j.stage === 0) {
+        j.stage = 1;
+        const from = r || { x: c.x, y: c.y };
+        const ang = Math.atan2(c.y - from.y, c.x - from.x);
+        let ok = false;
+        for (let k = 0; k < 8 && !ok; k++) {
+          const a = ang + (k % 2 ? 1 : -1) * k * 0.35, rad = 9;
+          const x = Math.round(c.x + Math.cos(a) * rad), y = Math.round(c.y + Math.sin(a) * rad);
+          if (World.canWalk(x, y) && c.pathTo(x, y, 0)) ok = true;
+        }
+        if (!ok) return FAIL;
+      }
+      c.activity = 'Utíká před nájezdníky';
+      if (c.followPath() !== 'moving') return DONE;
     },
 
     /** Vzít si výbavu (teplé oblečení, kuši). */

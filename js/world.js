@@ -361,6 +361,17 @@ const World = {
     if (k > 0) this.addAt(i, type, k, age);
     return n - k;
   },
+  /** Odebere `n` kusů suroviny odkudkoli z mapy (obchod). Vrací, kolik se podařilo. */
+  removeItems(type, n) {
+    let left = n;
+    for (const i of [...this.itemSet]) {
+      if (left <= 0) break;
+      const it = this.items[i];
+      if (!it || it.type !== type) continue;
+      left -= this.takeItem(i, Math.min(left, Math.max(0, Game.availItem(i))));
+    }
+    return n - left;
+  },
   /** Průběžně udržované počty surovin (bez procházení mapy). */
   countItems() { return this.counts; },
 
@@ -618,7 +629,7 @@ const World = {
       const c = this.crops[i];
       if (!c || c.g >= 1) continue;
       const fert = TERRAIN[this.terrain[i]].fert;
-      c.g += hours / Config.CROP_HOURS * fert * growMul;
+      c.g += hours / Config.CROP_HOURS * fert * growMul * (1 - 0.7 * Math.min(1, Pollution.at(i)));
       if (c.g >= 1) { c.g = 1; matured++; this.ripeSet.add(i); }
     }
     if (matured > 0) Game.notifyOnce('crop', `Úroda dozrála (${matured} polí) – kolonisté ji sklidí.`, 'good', 360);

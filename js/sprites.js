@@ -433,6 +433,25 @@ const Sprites = (() => {
       rect(7, 7, 2, 3, [232, 200, 96]); set(7, 9, [150, 120, 50]);
       rect(2, 13, 12, 1, [96, 62, 34]);
     }));
+    // ----- obrana -----
+    S.build.armory = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 7, 14, 5, [110, 114, 126]); rect(1, 7, 14, 1, [170, 176, 188]); rect(1, 11, 14, 1, [70, 74, 86]);
+      rect(2, 12, 2, 4, [70, 74, 86]); rect(12, 12, 2, 4, [70, 74, 86]);
+      for (let k = 0; k < 7; k++) set(3 + k, 5, [150, 104, 60]);
+      rect(9, 2, 2, 5, [110, 72, 40]); set(8, 2, [110, 72, 40]); set(8, 6, [110, 72, 40]);
+      rect(12, 4, 2, 3, [196, 150, 60]);
+    }));
+    S.build.turret = outline(paint(16, 16, (set, get, rect) => {
+      rect(2, 9, 12, 7, [112, 108, 102]); rect(2, 9, 12, 1, [160, 156, 148]); rect(2, 15, 12, 1, [70, 66, 62]);
+      for (let y = 3; y < 11; y++) for (let x = 4; x < 12; x++) if (Math.hypot(x - 7.5, y - 6.5) < 4) set(x, y, x + y < 12 ? [176, 184, 196] : [110, 116, 128]);
+      set(7, 6, [60, 62, 70]); set(8, 6, [60, 62, 70]); set(7, 7, [60, 62, 70]); set(8, 7, [60, 62, 70]);
+    }));
+    S.build.gate = paint(16, 16, (set, get, rect) => {
+      rect(0, 0, 16, 16, [70, 74, 86]);
+      for (let y = 2; y < 16; y++) for (let x = 2; x < 14; x++) set(x, y, (x - 2) % 4 === 0 ? [110, 78, 46] : [150, 110, 66]);
+      rect(2, 5, 12, 2, [120, 126, 138]); rect(2, 11, 12, 2, [120, 126, 138]);
+      for (const x of [3, 7, 11]) { set(x, 5, [200, 206, 216]); set(x, 11, [200, 206, 216]); }
+    });
     // ----- chov a krejčí -----
     S.build.tailor = outline(paint(16, 16, (set, get, rect) => {
       rect(1, 7, 14, 5, [150, 104, 60]); rect(1, 7, 14, 1, [186, 138, 86]); rect(1, 11, 14, 1, [100, 66, 38]);
@@ -769,6 +788,16 @@ const Sprites = (() => {
       for (const x of [2, 7, 12]) { rect(x, 5, 2, 8, [176, 126, 74]); set(x, 5, [206, 158, 100]); }
       rect(1, 7, 14, 1, [150, 104, 60]); rect(1, 10, 14, 1, [150, 104, 60]);
     }));
+    I.pollution_btn = outline(paint(16, 16, (set) => {
+      for (const [cx, cy, r] of [[5, 10, 3.4], [10, 9, 4], [8, 5, 3]]) for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) {
+        if (Math.hypot(x, y) <= r) set(cx + x, cy + y, x + y < 0 ? [150, 110, 160] : [110, 76, 124]);
+      }
+    }));
+    I.trade_btn = outline(paint(16, 16, (set, get, rect) => {
+      rect(2, 5, 11, 6, [176, 126, 74]); rect(2, 5, 11, 1, [206, 158, 100]); rect(2, 10, 11, 1, [116, 78, 44]);
+      rect(4, 2, 7, 3, [220, 190, 110]);
+      for (const cx of [4, 11]) for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) if (Math.hypot(x, y) < 2.4) set(cx + x, 12 + y, Math.hypot(x, y) < 1 ? [200, 200, 200] : [60, 50, 44]);
+    }));
     I.research_btn = outline(paint(16, 16, (set, get, rect) => {
       rect(6, 1, 4, 5, [200, 220, 236]); rect(5, 1, 6, 1, [150, 170, 190]);
       for (let y = 6; y < 14; y++) { const w = 2 + (y - 6) * 0.75; rect(8 - w, y, w * 2, 1, y > 9 ? [90, 190, 120] : [200, 220, 236]); }
@@ -805,6 +834,8 @@ const Sprites = (() => {
     return big.toDataURL();
   }
 
+  /** Sprite nájezdníka (tmavá kápě). */
+  S.raider = () => S._raider || (S._raider = colonist({ skin: [214, 170, 130], hair: [40, 20, 20], shirt: [120, 30, 30], pants: [40, 36, 40], style: 'long' }));
   S.init = init;
   S.buildTerrain = buildTerrain;
   S.colonist = colonist;

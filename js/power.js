@@ -87,6 +87,7 @@ const Power = {
           if (g.burn > 0 && demand > 0) { g.burn -= ticks * Config.MIN_PER_TICK; Pollution.add(g.i, m.pollute * ticks); }
           g.on = g.burn > 0 && demand > 0;
         } else g.on = true;
+        if (g.on && !g.broken && demand > 0) Maintenance.wearTime(g, ticks);
         supply += this.output(g);
       }
       net.supply = supply; net.demand = demand;

@@ -102,6 +102,10 @@ class Colonist {
     else if (this.warmth < 55) out.push({ label: 'Prochladl/a', val: -6 });
     else if (roofed && TimeSys.temp() < 6 && temp > 8) out.push({ label: 'Teplo domova', val: 3 });
     if (this.coat && TimeSys.temp() < 4) out.push({ label: 'Teplé oblečení', val: 2 });
+    const pol = Pollution.at(here);
+    if (pol > 0.6) out.push({ label: 'Dusí se kouřem', val: -8 });
+    else if (pol > 0.25) out.push({ label: 'Znečištěný vzduch', val: -4 });
+    if (Combat.raiders.length) out.push({ label: 'Nájezd na kolonii', val: -5 });
     if (World.floor[here]) out.push({ label: 'Pěkné prostředí', val: 2 });
     if (TimeSys.daylight() < 0.4 && Game.nearLight(this.tx, this.ty)) out.push({ label: 'Teplo a světlo ohně', val: 3 });
     if (Weather.cur === 'clear' && TimeSys.daylight() > 0.8) out.push({ label: 'Krásný den', val: 2 });
@@ -234,6 +238,11 @@ class Colonist {
 
   think() {
     const night = TimeSys.isNight();
+    // nájezd: ozbrojení brání, neozbrojení utíkají z dosahu
+    if (Combat.raiders.length) {
+      if (this.bow) { this.startJob({ type: 'fight' }); return; }
+      if (Combat.nearest(this.x, this.y, 6)) { this.startJob({ type: 'flee' }); return; }
+    }
     if (this.inBreak()) { this.startJob({ type: 'wander' }); return; }
     // hašení požáru má přednost před vším kromě holého přežití
     if (Fire.tiles.size && this.hunger > 12 && this.energy > 8) {
@@ -273,7 +282,9 @@ class Colonist {
     // přerušení kvůli naléhavým potřebám
     if (this.job) {
       const t = this.job.type;
-      if (t !== 'eat' && t !== 'sleep' && this.hunger < 12 && this.tickN === 0 && Jobs.findFood(this) >= 0) this.endJob();
+      if (Combat.raiders.length && t !== 'fight' && t !== 'flee' && this.tickN % 15 === 0 &&
+          (this.bow ? t !== 'eat' : !!Combat.nearest(this.x, this.y, 5))) this.endJob();
+      else if (t !== 'eat' && t !== 'sleep' && t !== 'fight' && this.hunger < 12 && this.tickN === 0 && Jobs.findFood(this) >= 0) this.endJob();
       else if (t !== 'sleep' && this.energy <= 1) {
         this.endJob();
         this.startJob({ type: 'sleep', bed: -1, collapse: true });

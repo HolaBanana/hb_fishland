@@ -148,6 +148,13 @@ const Renderer = {
         }
       }
     }
+    // vrstva znečištění
+    if (Pollution.show) {
+      for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) {
+        const p = Pollution.grid[y * W + x];
+        if (p > 0.02) this.rect(x * TS, y * TS, TS, TS, `rgba(150,60,170,${Math.min(0.75, p * 0.8)})`);
+      }
+    }
     // okraje zón
     for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) {
       const i = y * W + x, z = World.zone[i];
@@ -232,6 +239,7 @@ const Renderer = {
         if (bp && bp.i === i && BUILD[bp.type].layer === 'struct') this.drawBlueprint(bp, wx, wy);
       }
       for (const a of Animals.list) if (Math.floor(a.y) === y) this.drawAnimal(a);
+      for (const r of Combat.raiders) if (Math.floor(r.y) === y) this.drawRaider(r);
       const cs = byRow.get(y);
       if (cs) { cs.sort((a, b) => a.y - b.y); for (const c of cs) this.drawColonist(c); }
     }
@@ -256,6 +264,20 @@ const Renderer = {
     }
   },
 
+  drawRaider(r) {
+    const TS = Config.TILE, ctx = this.ctx, wx = r.x * TS, wy = r.y * TS;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.ellipse(this.X(wx), this.Y(wy + 4), 5 * this.z, 2 * this.z, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ff5a4a'; ctx.lineWidth = Math.max(1, this.z * 0.5);
+    ctx.beginPath(); ctx.ellipse(this.X(wx), this.Y(wy + 4), 6.5 * this.z, 2.8 * this.z, 0, 0, Math.PI * 2); ctx.stroke();
+    const spr = Sprites.raider();
+    const frame = r.moving ? 1 + (Math.floor(r.animT * 3.2) % 2) : (r.cd > 30 ? 1 : 0);
+    this.img(spr[r.dir][frame], wx - 8, wy - 12, 16, 16);
+    if (r.hp < r.maxHp) {
+      this.rect(wx - 6, wy - 15, 12, 2, 'rgba(0,0,0,0.65)');
+      this.rect(wx - 6, wy - 15, 12 * Math.max(0, r.hp / r.maxHp), 2, '#ff5a4a');
+    }
+  },
   drawAnimal(a) {
     const TS = Config.TILE, ctx = this.ctx;
     const spr = Sprites.animals[a.type];
@@ -308,9 +330,9 @@ const Renderer = {
       if (!isWall(x, y - 1)) this.rect(wx, wy, TS, 1.5, 'rgba(255,255,255,0.25)');
       if (!isWall(x - 1, y)) this.rect(wx, wy, 1, TS, 'rgba(0,0,0,0.3)');
       if (!isWall(x + 1, y)) this.rect(wx + TS - 1, wy, 1, TS, 'rgba(0,0,0,0.3)');
-    } else if (s.type === 'door') {
+    } else if (def.door) {
       const open = Game.colonists.some(c => Math.abs(c.x - (x + 0.5)) < 1 && Math.abs(c.y - (y + 0.5)) < 1);
-      this.img(open ? Sprites.build.door_open : Sprites.build.door, wx, wy, TS, TS);
+      this.img(open ? Sprites.build.door_open : Sprites.build[s.type], wx, wy, TS, TS);
     } else if (s.type === 'campfire') {
       this.img(Sprites.build.campfire, wx, wy, TS, TS);
       this.drawFlame(wx + 8, wy + 9);
@@ -368,11 +390,22 @@ const Renderer = {
       this.rect(wx + 2, wy + fh - 3, fw - 4, 2, 'rgba(0,0,0,0.6)');
       this.rect(wx + 2, wy + fh - 3, (fw - 4) * U.clamp(s.prog, 0, 1), 2, '#7ee07e');
     }
+    if (m.turret && s.aim !== undefined) {
+      // hlaveň míří na poslední cíl
+      const cx = wx + 8, cy = wy + 6.5;
+      for (let k = 2; k < 8; k++) this.rect(cx + Math.cos(s.aim) * k - 0.8, cy + Math.sin(s.aim) * k - 0.8, 1.6, 1.6, '#3c3e46');
+    }
+    // poškození nájezdníky
+    if (s.hp !== undefined && s.hp < Combat.hpOf(s)) {
+      this.rect(wx + 2, wy + 1, fw - 4, 1.5, 'rgba(0,0,0,0.6)');
+      this.rect(wx + 2, wy + 1, (fw - 4) * Math.max(0, s.hp / Combat.hpOf(s)), 1.5, '#ff8a4c');
+    }
     // stavové ikony
     let icon = null, col = '#ff6b5e';
     if (s.broken) icon = '🔧';
     else if (m.power && s.want && !s.on) icon = '⚡';
     else if (m.gen === 'boiler' && !(s.burn > 0) && !(s.inv.wood >= 1)) { icon = '!'; col = '#ffb347'; }
+    else if (m.turret && !(s.inv.ammo >= 1)) { icon = '!'; col = '#ffb347'; }
     if (icon && Math.sin(t * 5) > -0.3) {
       ctx.font = `bold ${Math.round(9 * this.z)}px VT323, monospace`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';

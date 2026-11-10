@@ -55,6 +55,15 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 #seasonLabel.s2 { color: #e9955a; }
 #seasonLabel.s3 { color: #a9d4ff; }
 .res.low span { color: var(--bad); }
+.res.trade { cursor: pointer; border: 2px solid var(--good); border-radius: 3px; animation: blink2 1.4s steps(2) 6; }
+table.trade td { padding: 2px 3px; }
+table.trade .pname img { width: 22px; height: 22px; vertical-align: middle; }
+table.trade .pname small { display: block; color: var(--muted); font-size: 13px; line-height: 12px; }
+.step { white-space: nowrap; }
+.step button { width: 34px; height: 34px; font-size: 20px; background: var(--panel2); border: 2px solid var(--border); border-radius: 3px; }
+.step b { display: inline-block; min-width: 30px; font-weight: normal; color: var(--accent); }
+.tsum { margin: 8px 0 2px; text-align: center; font-size: 19px; }
+.menu button:disabled { opacity: 0.4; }
 .res[title^="Energie"], .res[title^="Probíhající"] { cursor: pointer; }
 .target { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
 .target b { flex: 1; text-align: center; font-weight: normal; color: var(--accent); }
