@@ -5,7 +5,7 @@
  *                            s jiným nástrojem tažení = výběr oblasti
  *  - 2 prsty: posun + zoom (pinch)
  *  - pravé / prostřední tlačítko: posun, kolečko: zoom
- *  - klávesy: mezerník pauza, 1/2/3 rychlost, WASD/šipky posun, Esc zrušit nástroj
+ *  - klávesy: mezerník pauza, 1–4 rychlost, WASD/šipky posun, Esc zrušit, Enter potvrdit, Ctrl+Z zpět
  */
 const Input = {
   pointers: new Map(),
@@ -105,21 +105,29 @@ const Input = {
     }
     if (this.pointers.size > 0) return;
     if (!cancelled) {
-      if (g.type === 'pending') this.tap(e.clientX, e.clientY);
-      else if (g.type === 'drag' && this.drag) {
-        const d = this.drag;
-        const tiles = Tools.tilesFor(Game.tool, d.x0, d.y0, d.x1, d.y1);
-        Tools.apply(Game.tool, tiles);
-      }
+      if (g.type === 'pending') this.tap(e.clientX, e.clientY, e.pointerType);
+      else if (g.type === 'drag' && this.drag) this.commit(this.drag, e.pointerType);
     }
     this.drag = null;
     this.gesture = null;
   },
 
-  tap(sx, sy) {
+  /**
+   * Dokončený výběr nástrojem. Na dotyku se neprovede hned – zobrazí se náhled
+   * s cenou a tlačítky Potvrdit / Zrušit. Myší se provádí okamžitě (lze vrátit Zpět).
+   */
+  commit(d, pointerType) {
+    const sel = { tool: Game.tool, x0: d.x0, y0: d.y0, x1: d.x1, y1: d.y1 };
+    if (pointerType === 'mouse') {
+      Game.setPending(null);
+      Tools.apply(sel.tool, Tools.tilesFor(sel.tool, sel.x0, sel.y0, sel.x1, sel.y1));
+    } else Game.setPending(sel);
+  },
+
+  tap(sx, sy, pointerType) {
     const t = Camera.screenToTile(sx, sy);
     if (Game.tool !== 'select') {
-      Tools.apply(Game.tool, Tools.tilesFor(Game.tool, t.x, t.y, t.x, t.y));
+      this.commit({ x0: t.x, y0: t.y, x1: t.x, y1: t.y }, pointerType);
       return;
     }
     // výběr kolonisty (podle světové pozice, s tolerancí)
@@ -140,8 +148,14 @@ const Input = {
     if (down) {
       this.keys.add(k);
       if (k === ' ') { e.preventDefault(); Game.togglePause(); }
-      else if (k === '1' || k === '2' || k === '3') Game.setSpeed(+k);
-      else if (k === 'escape') { if (Game.tool !== 'select') UI.setTool('select'); else Game.select(null); }
+      else if (k === '1' || k === '2' || k === '3' || k === '4') Game.setSpeed(+k);
+      else if (k === 'escape') {
+        if (Game.pending) Game.setPending(null);
+        else if (Game.tool !== 'select') UI.setTool('select');
+        else Game.select(null);
+      }
+      else if (k === 'enter') Game.confirmPending();
+      else if (k === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); Tools.undo(); }
       else if (k === '+' || k === '=') Camera.setZoom(Camera.zoom * 1.2);
       else if (k === '-') Camera.setZoom(Camera.zoom / 1.2);
     } else this.keys.delete(k);

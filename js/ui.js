@@ -43,8 +43,9 @@ const UI = {
     // rychlost
     const sp = this.$('speed');
     sp.innerHTML = '';
-    [[0, '❚❚'], [1, '▶'], [2, '▶▶'], [3, '▶▶▶']].forEach(([s, l]) => {
-      const b = this.el('button', 'spd', l);
+    Config.SPEEDS.forEach((s) => {
+      const b = this.el('button', 'spd', s === 0 ? '❚❚' : s + '×');
+      b.title = s === 0 ? 'Pauza (mezerník)' : `Rychlost ${s}× (klávesa ${s})`;
       b.dataset.speed = s;
       b.onclick = () => Game.setSpeed(s);
       sp.appendChild(b);
@@ -54,6 +55,26 @@ const UI = {
     this.setTab('orders');
     this.updateSpeed();
     this.$('hintClose').onclick = () => this.setTool('select');
+    this.$('confirmOk').onclick = () => Game.confirmPending();
+    this.$('confirmNo').onclick = () => Game.setPending(null);
+    this.$('undoBtn').onclick = () => Tools.undo();
+    this.$('importFile').onchange = (e) => {
+      const f = e.target.files[0];
+      e.target.value = '';
+      if (f) Save.importFile(f, d => Main.boot(d), msg => this.toast(msg, 'warn'));
+    };
+    this.ready = true;
+    this.updateUndo();
+    this.update();
+  },
+
+  /** Po načtení jiné hry / nové kolonii obnovit části rozhraní závislé na stavu. */
+  reset() {
+    this.buildColonistBar();
+    this.setTool('select');
+    this.updateSpeed();
+    this.updateUndo();
+    this.updateInfo(true);
     this.update();
   },
 
@@ -86,15 +107,40 @@ const UI = {
   },
   setTool(tool) {
     Game.tool = tool;
+    Game.pending = null;
     Input.drag = null;
     this.markTool();
-    const hint = this.$('toolHint');
-    if (tool === 'select') hint.classList.add('hidden');
-    else {
-      hint.classList.remove('hidden');
+    if (tool !== 'select') {
       const d = Tools.defs[tool];
       this.$('hintText').innerHTML = `<b>${d.name}</b> – ${d.hint || ''}` + (d.build ? ` <i>Cena: ${Tools.costText(tool)}</i>` : '');
     }
+    this.updateConfirm();
+  },
+
+  /** Lišta s potvrzením výběru (dotyk): náhled, počet políček, cena, Potvrdit / Zrušit. */
+  updateConfirm() {
+    const p = Game.pending;
+    this.$('confirmBar').classList.toggle('hidden', !p);
+    this.$('toolHint').classList.toggle('hidden', !!p || Game.tool === 'select');
+    if (!p) return;
+    const d = Tools.defs[p.tool];
+    const n = Tools.countValid(p.tool, Tools.tilesFor(p.tool, p.x0, p.y0, p.x1, p.y1));
+    let t = `<b>${d.name}</b> `;
+    if (n === 0) t += '– tady není co provést.';
+    else {
+      t += `×${n}`;
+      if (d.build) {
+        const lack = Tools.lacking(p.tool, n);
+        t += ` · <i>${Tools.costText(p.tool, n)}</i>` + (lack.length ? ` <em>chybí ${lack.join(', ')}</em>` : '');
+      }
+    }
+    this.$('confirmText').innerHTML = t;
+    this.$('confirmOk').disabled = n === 0;
+  },
+  updateUndo() {
+    const st = Tools.undoStack, b = this.$('undoBtn');
+    b.classList.toggle('hidden', st.length === 0);
+    if (st.length) b.title = `Vrátit: ${st[st.length - 1].name} ×${st[st.length - 1].n}`;
   },
   markTool() {
     for (const b of this.$('toolRow').children) b.classList.toggle('active', b.dataset.tool === Game.tool);
@@ -223,7 +269,7 @@ const UI = {
     const render = () => {
       let h = `<div class="mbox wide"><div class="mhead"><b>Priority práce</b><button class="x" id="mClose">✕</button></div>
         <p class="mnote">Klepnutím měníš prioritu: <b class="p1">1</b> nejvyšší … <b class="p4">4</b> nejnižší, <b class="p0">–</b> nedělá. Číslo pod prioritou = úroveň dovednosti.</p>
-        <div class="ptable"><table><tr><th></th>${WORK_TYPES.map(w => `<th>${w.name}</th>`).join('')}</tr>`;
+        <div class="ptable"><table><tr><th></th>${WORK_TYPES.map(w => `<th><span class="full">${w.name}</span><span class="short">${w.short}</span></th>`).join('')}</tr>`;
       for (const c of Game.colonists) {
         h += `<tr><td class="pname"><img class="pix portrait sm" src="${Sprites.toURL(c.portrait, 3)}" alt="">${c.first}</td>`;
         for (const w of WORK_TYPES) {
@@ -250,19 +296,52 @@ const UI = {
 
   openMenu() {
     const m = this.$('modal');
-    m.innerHTML = `<div class="mbox"><div class="mhead"><b>Menu</b><button class="x" id="mClose">✕</button></div>
+    const render = () => {
+      m.innerHTML = `<div class="mbox"><div class="mhead"><b>Menu</b><button class="x" id="mClose">✕</button></div>
+        <div class="menu">
+          <button id="mBack">Pokračovat ve hře</button>
+          <button id="mSave">Uložit nyní</button>
+          <button id="mExport">Exportovat hru do souboru</button>
+          <button id="mImport">Importovat hru ze souboru</button>
+          <button id="mAuto">Zrychlit čas, když všichni spí: <b class="${Game.autoFast ? 'on' : 'off'}">${Game.autoFast ? 'ZAP' : 'VYP'}</b></button>
+          <button id="mHelp">Nápověda a ovládání</button>
+          <button id="mNew">Nová kolonie (nová mapa)</button>
+        </div><p class="mnote">Hra se ukládá automaticky každou herní hodinu do tohoto prohlížeče. Semínko mapy: ${Game.seed}</p></div>`;
+      m.classList.remove('hidden');
+      const close = () => m.classList.add('hidden');
+      this.$('mClose').onclick = close;
+      this.$('mBack').onclick = close;
+      this.$('mSave').onclick = () => {
+        close();
+        if (Save.store()) this.toast('Hra uložena.', 'good');
+        else this.toast('Uložení do prohlížeče selhalo – použij export do souboru.', 'warn');
+      };
+      this.$('mExport').onclick = () => { close(); Save.exportFile(); this.toast('Uložená hra se stahuje jako soubor.', 'good'); };
+      this.$('mImport').onclick = () => { close(); this.$('importFile').click(); };
+      this.$('mAuto').onclick = () => { Game.setAutoFast(!Game.autoFast); render(); };
+      this.$('mHelp').onclick = () => this.openHelp();
+      this.$('mNew').onclick = () => {
+        if (confirm('Opravdu začít novou kolonii? Současná uložená hra bude přepsána.')) { Save.clear(); Main.boot(null); }
+      };
+    };
+    m.onclick = (e) => { if (e.target === m) m.classList.add('hidden'); };
+    render();
+  },
+
+  /** Úvodní dotaz: pokračovat z uložené hry, nebo začít znovu. */
+  askContinue(saved) {
+    const m = this.$('modal');
+    const when = new Date(saved.savedAt).toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+    m.innerHTML = `<div class="mbox"><div class="mhead"><b>Kolonie</b></div>
+      <p>Nalezena uložená hra: <b class="on">${saved.label}</b><br><span class="mnote">${saved.colonists.map(c => c.first).join(', ')} · uloženo ${when}</span></p>
       <div class="menu">
-        <button id="mHelp">Nápověda a ovládání</button>
-        <button id="mNew">Nová kolonie (nová mapa)</button>
-        <button id="mBack">Pokračovat</button>
-      </div><p class="mnote">Semínko mapy: ${Game.seed}</p></div>`;
+        <button id="mCont">Pokračovat</button>
+        <button id="mNewGame">Nová kolonie</button>
+      </div></div>`;
     m.classList.remove('hidden');
-    const close = () => m.classList.add('hidden');
-    this.$('mClose').onclick = close;
-    this.$('mBack').onclick = close;
-    this.$('mHelp').onclick = () => this.openHelp();
-    this.$('mNew').onclick = () => { if (confirm('Opravdu začít novou kolonii? Současný postup bude ztracen.')) location.reload(); };
-    m.onclick = (e) => { if (e.target === m) close(); };
+    m.onclick = null;
+    this.$('mCont').onclick = () => Main.boot(saved);
+    this.$('mNewGame').onclick = () => Main.boot(null);
   },
 
   openHelp(first) {
@@ -276,11 +355,13 @@ const UI = {
         <li><b>Zoom:</b> roztáhni dva prsty / kolečko myši.</li>
         <li><b>Výběr oblasti:</b> zvol nástroj ve spodním menu a táhni prstem přes mapu.</li>
         <li><b>Výběr kolonisty:</b> klepni na něj nebo na jeho kartu nahoře. Druhé klepnutí na kartu = sledování kamerou.</li>
-        <li><b>Čas:</b> ❚❚ pauza, ▶ 1×, ▶▶ 2×, ▶▶▶ 3× (klávesy mezerník, 1, 2, 3).</li>
+        <li><b>Potvrzení:</b> po tažení prstem se ukáže náhled s cenou – potvrď ✔, nebo zruš ✕. Poslední akci vrátíš tlačítkem <b>↶ Zpět</b>.</li>
+        <li><b>Čas:</b> ❚❚ pauza, 1× až 4× (klávesy mezerník, 1–4). V Menu lze zapnout zrychlení, když všichni spí.</li>
+        <li><b>Ukládání:</b> automaticky každou herní hodinu; v Menu je export a import do souboru.</li>
       </ul>
       <h4>Jak začít</h4>
       <ol>
-        <li><b>Příkazy → Kácet</b>: označ pár stromů – dřevo je potřeba na všechno.</li>
+        <li><b>Příkazy → Kácet</b>: označ pár stromů – dřevo je potřeba na všechno. Kácení má vlastní prioritu i dovednost (Dřevorubectví).</li>
         <li><b>Stavba → Ohniště</b>: na něm se vaří teplé jídlo (lepší nálada).</li>
         <li><b>Zóny → Pole</b>: na úrodné půdě (tmavá hlína) rostou brambory rychleji.</li>
         <li><b>Stavba → Postel</b> pro každého kolonistu, kolem postav <b>zdi</b> a <b>dveře</b>.</li>

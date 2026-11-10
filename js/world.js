@@ -22,15 +22,64 @@ const World = {
     this.cost = new Float32Array(n);
     this.variant = new Uint8Array(n);
 
+    // výchozí stav objektů po vygenerování (pro ukládání rozdílů)
+    this.baseType = new Uint8Array(n);
+    this.baseSize = new Float32Array(n);
+    this.resetIndex();
+  },
+
+  /** Průběžně udržované indexy – počty surovin a seznamy úkolů. */
+  resetIndex() {
     this.itemSet = new Set();
+    this.looseSet = new Set();      // hromádky mimo sklad (k odnesení)
+    this.counts = { wood: 0, stone: 0, iron: 0, food: 0, meal: 0 };
+    this.itemVer = 0;               // zvýší se při každé změně předmětů / zón
     this.bpSet = new Set();
-    this.desSet = new Set();
+    this.desSet = new Set();        // všechna označení (pro vykreslení)
+    this.des = { chop: new Set(), mine: new Set(), harvest: new Set() };
     this.deconSet = new Set();
     this.cropSet = new Set();
+    this.ripeSet = new Set();       // zralá pole ke sklizni
+    this.emptyFarm = new Set();     // políčka pole bez plodiny (k osetí)
     this.structSet = new Set();
+    this.structBy = {};             // typ stavby → Set indexů
+    this.lights = new Set();        // stavby, které svítí
     this.bushSet = new Set();
     this.stockTiles = [];
     this.farmTiles = [];
+  },
+
+  /** Přepočítá všechny indexy ze surových polí (po načtení uložené hry). */
+  rebuildIndex() {
+    this.resetIndex();
+    for (let i = 0; i < this.n; i++) {
+      const it = this.items[i];
+      if (it) { this.itemSet.add(i); this.counts[it.type] += it.n; }
+      if (this.bp[i]) this.bpSet.add(i);
+      const o = this.obj[i];
+      if (o) {
+        if (o.type === 'bush') this.bushSet.add(i);
+        if (o.des) { this.desSet.add(i); this.des[o.des].add(i); }
+      }
+      const s = this.struct[i];
+      if (s) this.indexStruct(i, s.type, true);
+      if ((s && s.decon) || (this.floor[i] && this.floor[i].decon)) this.deconSet.add(i);
+      const c = this.crops[i];
+      if (c) { this.cropSet.add(i); if (c.g >= 1) this.ripeSet.add(i); }
+      this.recalc(i);
+    }
+    this.rebuildZones();
+  },
+  indexStruct(i, type, add) {
+    if (add) {
+      this.structSet.add(i);
+      (this.structBy[type] || (this.structBy[type] = new Set())).add(i);
+      if (BUILD[type].light) this.lights.add(i);
+    } else {
+      this.structSet.delete(i);
+      if (this.structBy[type]) this.structBy[type].delete(i);
+      this.lights.delete(i);
+    }
   },
 
   idx(x, y) { return y * this.w + x; },
@@ -102,6 +151,12 @@ const World = {
     }
     this.start = this.findStart();
     this.prepareStart();
+    const CODE = { tree: 1, rock: 2, ore: 3, bush: 4 };
+    for (let i = 0; i < n; i++) {
+      const o = this.obj[i];
+      this.baseType[i] = o ? CODE[o.type] : 0;
+      this.baseSize[i] = o && o.size ? o.size : 0;
+    }
   },
 
   findStart() {
@@ -145,8 +200,13 @@ const World = {
       if (this.walk[i] && !this.obj[i]) this.zone[i] = 1;
     }
     this.rebuildZones();
+    // startovní zásoby – každá hromádka na vlastní políčko skladu; když sklad
+    // nemá dost místa (stísněný start), položí se zbytek volně do okolí
     const st = this.stockTiles;
-    const put = (k, type, n) => { if (st[k] !== undefined) this.items[st[k]] = { type, n }; this.itemSet.add(st[k]); };
+    const put = (k, type, n) => {
+      if (st[k] !== undefined && !this.items[st[k]]) n = this.putItem(st[k], type, n);
+      if (n > 0) this.dropItem(sx, sy + 1, type, n);
+    };
     put(0, 'wood', 75); put(1, 'wood', 75); put(2, 'wood', 30);
     put(3, 'meal', 18); put(4, 'food', 30); put(5, 'stone', 20);
   },
@@ -180,14 +240,16 @@ const World = {
     if (!o) return;
     this.obj[i] = null;
     this.desSet.delete(i);
+    if (o.des) this.des[o.des].delete(i);
     this.bushSet.delete(i);
     this.recalc(i);
   },
   designate(i, des) {
     const o = this.obj[i];
     if (!o) return;
+    if (o.des) this.des[o.des].delete(i);
     o.des = des;
-    if (des) this.desSet.add(i); else this.desSet.delete(i);
+    if (des) { this.desSet.add(i); this.des[des].add(i); } else this.desSet.delete(i);
   },
 
   // ---------- Předměty ----------
@@ -206,8 +268,8 @@ const World = {
       const i = this.idx(cx, cy);
       if (this.canHoldItem(i)) {
         const it = this.items[i];
-        if (!it) { const k = Math.min(n, Config.STACK); this.items[i] = { type, n: k }; this.itemSet.add(i); n -= k; }
-        else if (it.type === type && it.n < Config.STACK) { const k = Math.min(n, Config.STACK - it.n); it.n += k; n -= k; }
+        if (!it) { const k = Math.min(n, Config.STACK); this.addAt(i, type, k); n -= k; }
+        else if (it.type === type && it.n < Config.STACK) { const k = Math.min(n, Config.STACK - it.n); this.addAt(i, type, k); n -= k; }
       }
       if (q.length > 400) continue;
       if (!this.walk[i] && !(cx === x && cy === y)) continue;
@@ -222,29 +284,39 @@ const World = {
     }
     return n;
   },
+  /** Jediné místo, kde předměty přibývají → počty a seznamy zůstávají aktuální. */
+  addAt(i, type, k) {
+    const it = this.items[i];
+    if (it) it.n += k;
+    else {
+      this.items[i] = { type, n: k };
+      this.itemSet.add(i);
+      if (this.zone[i] !== 1) this.looseSet.add(i);
+    }
+    this.counts[type] += k;
+    this.itemVer++;
+  },
   takeItem(i, n) {
     const it = this.items[i];
     if (!it) return 0;
     const k = Math.min(n, it.n);
     it.n -= k;
-    if (it.n <= 0) { this.items[i] = null; this.itemSet.delete(i); }
+    this.counts[it.type] -= k;
+    this.itemVer++;
+    if (it.n <= 0) { this.items[i] = null; this.itemSet.delete(i); this.looseSet.delete(i); }
     return k;
   },
   /** Přidá do konkrétního políčka (sklad); vrací zbytek. */
   putItem(i, type, n) {
     if (!this.canHoldItem(i)) return n;
     const it = this.items[i];
-    if (!it) { const k = Math.min(n, Config.STACK); this.items[i] = { type, n: k }; this.itemSet.add(i); return n - k; }
-    if (it.type !== type) return n;
-    const k = Math.min(n, Config.STACK - it.n);
-    it.n += k;
+    if (it && it.type !== type) return n;
+    const k = Math.min(n, Config.STACK - (it ? it.n : 0));
+    if (k > 0) this.addAt(i, type, k);
     return n - k;
   },
-  countItems() {
-    const c = { wood: 0, stone: 0, iron: 0, food: 0, meal: 0 };
-    for (const i of this.itemSet) { const it = this.items[i]; if (it) c[it.type] += it.n; }
-    return c;
-  },
+  /** Průběžně udržované počty surovin (bez procházení mapy). */
+  countItems() { return this.counts; },
 
   // ---------- Zóny ----------
   rebuildZones() {
@@ -253,6 +325,24 @@ const World = {
       if (this.zone[i] === 1) this.stockTiles.push(i);
       else if (this.zone[i] === 2) this.farmTiles.push(i);
     }
+    this.looseSet = new Set();
+    for (const i of this.itemSet) if (this.zone[i] !== 1) this.looseSet.add(i);
+    this.emptyFarm = new Set();
+    for (const i of this.farmTiles) if (!this.crops[i]) this.emptyFarm.add(i);
+    this.itemVer++;
+  },
+  setCrop(i, g) {
+    this.crops[i] = { g };
+    this.cropSet.add(i);
+    this.emptyFarm.delete(i);
+    if (g >= 1) this.ripeSet.add(i);
+  },
+  removeCrop(i) {
+    if (!this.crops[i]) return;
+    this.crops[i] = null;
+    this.cropSet.delete(i);
+    this.ripeSet.delete(i);
+    if (this.zone[i] === 2) this.emptyFarm.add(i);
   },
   canSow(i) {
     return this.zone[i] === 2 && !this.crops[i] && !this.obj[i] && !this.struct[i] && !this.floor[i] &&
@@ -294,12 +384,12 @@ const World = {
       this.floor[i] = { type: bp.type, decon: false };
     } else {
       this.struct[i] = { type: bp.type, decon: false, owner: -1 };
-      this.structSet.add(i);
-      if (this.crops[i]) { this.crops[i] = null; this.cropSet.delete(i); }
+      this.indexStruct(i, bp.type, true);
+      this.removeCrop(i);
       this.recalc(i);
       // odsunout předměty z políčka
       const it = this.items[i];
-      if (it) { this.items[i] = null; this.itemSet.delete(i); this.dropItem(x, y, it.type, it.n); }
+      if (it) { const t = it.type, k = this.takeItem(i, it.n); this.dropItem(x, y, t, k); }
     }
     this.recalc(i);
   },
@@ -308,8 +398,8 @@ const World = {
     let def = null;
     if (this.struct[i] && this.struct[i].decon) {
       def = BUILD[this.struct[i].type];
+      this.indexStruct(i, this.struct[i].type, false);
       this.struct[i] = null;
-      this.structSet.delete(i);
     } else if (this.floor[i] && this.floor[i].decon) {
       def = BUILD[this.floor[i].type];
       this.floor[i] = null;
@@ -326,11 +416,7 @@ const World = {
     if (this.floor[i] && this.floor[i].decon) return this.floor[i];
     return null;
   },
-  structsOfType(type) {
-    const out = [];
-    for (const i of this.structSet) if (this.struct[i] && this.struct[i].type === type) out.push(i);
-    return out;
-  },
+  structsOfType(type) { return this.structBy[type] ? [...this.structBy[type]] : []; },
 
   // ---------- Růst ----------
   update(hours) {
@@ -342,7 +428,7 @@ const World = {
       if (!c || c.g >= 1) continue;
       const fert = TERRAIN[this.terrain[i]].fert;
       c.g += hours / Config.CROP_HOURS * fert * growMul;
-      if (c.g >= 1) { c.g = 1; matured++; }
+      if (c.g >= 1) { c.g = 1; matured++; this.ripeSet.add(i); }
     }
     if (matured > 0) Game.notifyOnce('crop', `Úroda dozrála (${matured} polí) – kolonisté ji sklidí.`, 'good', 360);
     for (const i of this.bushSet) {
@@ -368,7 +454,7 @@ const World = {
     }
     for (let i = 0; i < this.n; i++) {
       const o = this.obj[i];
-      if (o && o.type === 'tree' && o.size < 1) o.size = Math.min(1, o.size + hours * 0.004);
+      if (o && o.type === 'tree' && o.size < 1) o.size = Math.min(1, o.size + hours * Config.TREE_GROW_PER_HOUR);
     }
   },
 };

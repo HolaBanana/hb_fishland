@@ -45,7 +45,7 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 .res img { width: 24px; height: 24px; }
 #speed { display: flex; gap: 2px; padding: 2px; }
 .spd {
-  background: var(--panel2); border: 2px solid #3d3122; min-width: 42px; height: 34px; font-size: 14px; letter-spacing: -2px; border-radius: 3px;
+  background: var(--panel2); border: 2px solid #3d3122; min-width: 40px; height: 34px; font-size: 19px; border-radius: 3px; padding: 0 4px;
 }
 .spd.active { background: #6b5225; border-color: var(--accent); color: #fff; }
 
@@ -82,7 +82,8 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 .pact { background: #120e0a; padding: 3px 6px; margin: 4px 0 6px; border-left: 3px solid var(--good); }
 .psec { margin: 8px 0 2px; color: var(--accent); border-bottom: 1px solid var(--border); }
 .stat, .skill { display: flex; align-items: center; gap: 6px; height: 20px; }
-.stat > span, .skill > span { width: 70px; }
+.stat > span, .skill > span { width: 70px; white-space: nowrap; }
+.skill > span { width: 112px; }
 .stat > b, .skill > b { width: 26px; text-align: right; font-weight: normal; }
 .bar, .sbar { flex: 1; height: 10px; background: #0e0b08; border: 1px solid #3d3122; position: relative; }
 .bar i, .sbar i { position: absolute; left: 0; top: 0; bottom: 0; display: block; }
@@ -109,7 +110,19 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
   display: flex; flex-direction: column; gap: 5px; pointer-events: none;
 }
 #bottom > * { pointer-events: auto; }
-#toolHint { display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 10px; align-self: center; max-width: 680px; font-size: 18px; line-height: 18px; }
+#bottom > #actionRow { display: flex; align-items: flex-end; justify-content: center; gap: 6px; pointer-events: none; position: relative; min-height: 0; }
+#actionRow > * { pointer-events: auto; }
+#toolHint, #confirmBar { display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 10px; max-width: 680px; font-size: 18px; line-height: 18px; min-width: 0; }
+#confirmBar { border-color: var(--accent); flex-wrap: wrap; justify-content: flex-end; }
+#confirmText { flex: 1 1 140px; }
+#confirmText em { color: var(--bad); font-style: normal; }
+#confirmBar i { color: var(--accent); font-style: normal; }
+.cbtn { height: 40px; padding: 0 12px; font-size: 19px; border-radius: 3px; border: 2px solid var(--border); background: var(--panel2); white-space: nowrap; }
+.cbtn.ok { background: #2f5a2c; border-color: #7ee07e; color: #fff; }
+.cbtn.ok:disabled { opacity: 0.4; }
+.cbtn.no { background: #5a2c28; border-color: #c9675e; }
+#undoBtn { flex: none; height: 40px; padding: 0 12px; font-size: 19px; white-space: nowrap; }
+#undoBtn:active { background: #4a3a22; }
 #toolHint i { color: var(--accent); font-style: normal; }
 #toolRow {
   display: flex; gap: 5px; overflow-x: auto; padding: 4px; scrollbar-width: none;
@@ -153,6 +166,13 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
   font-size: 26px; color: var(--accent); text-shadow: 2px 2px 0 #000; z-index: 4; pointer-events: none; letter-spacing: 4px;
 }
 body.paused #pausedBadge { display: block; animation: blink2 1.2s steps(2) infinite; }
+#fastBadge {
+  position: fixed; bottom: calc(190px + var(--safe-b)); left: 50%; transform: translateX(-50%); display: none; white-space: nowrap;
+  font-size: 20px; color: #bcd6ff; text-shadow: 2px 2px 0 #000; z-index: 4; pointer-events: none;
+}
+body.fast:not(.paused) #fastBadge { display: block; }
+.menu b.on, b.on { color: var(--good); font-weight: normal; }
+.menu b.off { color: var(--muted); font-weight: normal; }
 @keyframes blink2 { 50% { opacity: 0.3; } }
 
 /* ---------- Modální okna ---------- */
@@ -175,6 +195,7 @@ body.paused #pausedBadge { display: block; animation: blink2 1.2s steps(2) infin
 .ptable { overflow-x: auto; }
 .ptable table { border-collapse: collapse; width: 100%; }
 .ptable th { font-weight: normal; color: var(--muted); font-size: 16px; padding: 2px 4px; }
+.ptable th .short { display: none; }
 .ptable td { text-align: center; padding: 3px 2px; border-top: 1px solid #3a2f22; }
 .ptable td small { display: block; color: var(--muted); font-size: 13px; line-height: 12px; }
 .pname { text-align: left !important; white-space: nowrap; }
@@ -200,7 +221,18 @@ body.paused #pausedBadge { display: block; animation: blink2 1.2s steps(2) infin
   #resources { order: 3; flex-basis: 100%; justify-content: space-between; }
   .res { font-size: 18px; padding: 0 2px; }
   .res img { width: 20px; height: 20px; }
-  .spd { min-width: 34px; height: 30px; }
+  .spd { min-width: 32px; height: 30px; font-size: 17px; padding: 0 2px; }
+  .cbtn, #undoBtn { font-size: 17px; padding: 0 8px; }
+  .ptable th .full { display: none; }
+  .ptable th .short { display: inline; }
+  .ptable th { font-size: 14px; padding: 2px 0; }
+  .ptable td { padding: 3px 1px; }
+  .prio { width: 38px; height: 36px; font-size: 20px; }
+  .pname .portrait { display: none; }
+  .pname { max-width: 74px; overflow: hidden; text-overflow: ellipsis; }
+  .mbox { padding: 8px 8px; }
+  #toolHint, #confirmBar { font-size: 16px; line-height: 16px; }
+  .skill > span { width: 100px; }
   #colonistBar { top: calc(84px + var(--safe-t)); left: 4px; }
   .ccard { width: auto; padding: 2px; }
   .ccard .cinfo { display: none; }
@@ -213,7 +245,6 @@ body.paused #pausedBadge { display: block; animation: blink2 1.2s steps(2) infin
   .tool .tname { font-size: 15px; }
   .tab { font-size: 16px; height: 40px; gap: 3px; padding: 0 2px; }
   .tab img { width: 22px; height: 22px; }
-  #toolHint { font-size: 16px; line-height: 16px; }
 }
 @media (max-width: 420px) {
   .tab span { display: none; }

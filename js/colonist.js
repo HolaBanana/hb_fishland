@@ -229,7 +229,7 @@ class Colonist {
     // přerušení kvůli naléhavým potřebám
     if (this.job) {
       const t = this.job.type;
-      if (t !== 'eat' && t !== 'sleep' && this.hunger < 12 && Jobs.findFood(this) >= 0) this.endJob();
+      if (t !== 'eat' && t !== 'sleep' && this.hunger < 12 && this.tickN === 0 && Jobs.findFood(this) >= 0) this.endJob();
       else if (t !== 'sleep' && this.energy <= 1) {
         this.endJob();
         this.startJob({ type: 'sleep', bed: -1, collapse: true });

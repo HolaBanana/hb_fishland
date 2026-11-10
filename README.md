@@ -23,18 +23,22 @@ Parametry URL: `?seed=123` (pevné semínko mapy), `?nohelp` (bez úvodní nápo
 - **Generovaná mapa** 120×120 (fraktální šum): jezera, písek, tráva, úrodná půda, hlína,
   hory se skálou a žilkami **železné rudy**, lesy (listnaté i jehličnaté) a keře s bobulemi.
 - **4 kolonisté** s náhodnými českými jmény, vzhledem, povahovými rysy a dovednostmi
-  (stavba, těžba, farmaření, vaření), které se prací zlepšují.
+  (stavba, dřevorubectví, těžba, farmaření, vaření), které se prací zlepšují.
 - **Potřeby**: sytost, energie, nálada (myšlenky typu „teplé jídlo“, „spal/a na zemi“,
   „moknutí v dešti“…). Při velmi špatné náladě hrozí psychické zhroucení.
 - **Samostatná AI**: kolonisté si berou práci podle **priorit 1–4** (okno *Práce*) a vzdálenosti,
-  rezervují si cíle, nosí materiál, staví, kácí, těží, sází, sklízí, vaří, nosí do skladu,
+  rezervují si cíle, nosí materiál (naberou ho pro víc sousedních plánů najednou a obejdou je), staví, kácí, těží, sází, sklízí, vaří, nosí do skladu,
   jedí a spí. Cesty hledají algoritmem **A\*** (8 směrů, binární halda, ceny terénu).
 - **Stavby**: dřevěné a kamenné zdi, dveře, podlahy, postele, ohniště (vaření, světlo), železné lampy,
   bourání s vrácením části materiálu.
 - **Zóny**: sklad a pole s bramborami (růst závisí na úrodnosti, světle a dešti).
 - **Den a noc** s dynamickým osvětlením (ohně a lampy), západy slunce,
   **počasí** (jasno, oblačno, déšť, bouřka s blesky, mlha) a stíny mraků.
-- **Zrychlení času** ❚❚ / 1× / 2× / 3×.
+- **Zrychlení času** ❚❚ / 1× / 2× / 3× / 4× a volitelné automatické zrychlení, když všichni kolonisté spí.
+- **Ukládání**: automaticky do `localStorage` jednou za herní hodinu, při startu nabídka pokračování,
+  v Menu export a import uložené hry do souboru JSON. Ukládá se semínko mapy a jen změny světa.
+- **Potvrzování a Zpět**: tah nástrojem na dotyku ukáže náhled s cenou a tlačítka Potvrdit / Zrušit;
+  poslední akce (označení, plány, zóny) jdou vrátit tlačítkem ↶ Zpět.
 
 ## Ovládání
 
@@ -44,7 +48,9 @@ Parametry URL: `?seed=123` (pevné semínko mapy), `?nohelp` (bez úvodní nápo
 | Zoom | roztažení dvou prstů | kolečko, `+` / `-` |
 | Výběr oblasti | zvol nástroj ve spodním menu a táhni prstem | tažení levým tlačítkem |
 | Výběr kolonisty / políčka | klepnutí | kliknutí |
-| Pauza / rychlost | tlačítka vpravo nahoře | mezerník, `1` `2` `3` |
+| Potvrdit / zrušit výběr | tlačítka ✔ Potvrdit / ✕ Zrušit | myší se provede hned; `Enter` / `Esc` |
+| Vrátit poslední akci | tlačítko ↶ Zpět | `Ctrl+Z` |
+| Pauza / rychlost | tlačítka vpravo nahoře | mezerník, `1`–`4` |
 | Zrušit nástroj | ✕ u nápovědy nástroje | `Esc` |
 
 ## Struktura kódu
@@ -65,6 +71,7 @@ js/tools.js         – nástroje hráče (označování, stavění, zóny)
 js/input.js         – dotykové a myší ovládání
 js/renderer.js      – vykreslování, osvětlení, počasí
 js/ui.js            – horní lišta, karty kolonistů, info panel, menu, priority, notifikace
+js/save.js          – ukládání: localStorage, export a import do souboru
 js/game.js          – stav hry, rezervace a herní smyčka s pevným krokem
-js/main.js          – spuštění
+js/main.js          – spuštění, nabídka pokračování z uložené hry
 ```

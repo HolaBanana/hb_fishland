@@ -29,9 +29,19 @@
   <div id="infoPanel" class="panel hidden"></div>
   <div id="toasts"></div>
   <div id="pausedBadge">PAUZA</div>
+  <div id="fastBadge">▶▶ Všichni spí – čas zrychlen</div>
+  <input type="file" id="importFile" accept=".json,application/json" class="hidden">
 
   <div id="bottom">
-    <div id="toolHint" class="panel hidden"><span id="hintText"></span><button id="hintClose" class="x">✕</button></div>
+    <div id="actionRow">
+      <div id="toolHint" class="panel hidden"><span id="hintText"></span><button id="hintClose" class="x">✕</button></div>
+      <div id="confirmBar" class="panel hidden">
+        <span id="confirmText"></span>
+        <button id="confirmOk" class="cbtn ok">✔ Potvrdit</button>
+        <button id="confirmNo" class="cbtn no">✕ Zrušit</button>
+      </div>
+      <button id="undoBtn" class="panel hidden" title="Vrátit poslední akci (Ctrl+Z)">↶ Zpět</button>
+    </div>
     <div id="toolRow"></div>
     <div id="tabRow"></div>
   </div>
@@ -52,6 +62,7 @@
   <script src="js/input.js"></script>
   <script src="js/renderer.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/save.js"></script>
   <script src="js/game.js"></script>
   <script src="js/main.js"></script>
 </body>

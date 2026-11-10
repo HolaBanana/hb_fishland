@@ -343,7 +343,9 @@ const Renderer = {
     if (tool === 'select') return;
     const d = Tools.defs[tool];
     let tiles = null;
-    if (Input.drag) tiles = Tools.tilesFor(tool, Input.drag.x0, Input.drag.y0, Input.drag.x1, Input.drag.y1);
+    // tažený výběr, nebo výběr čekající na potvrzení
+    const sel = Input.drag || (Game.pending && Game.pending.tool === tool ? Game.pending : null);
+    if (sel) tiles = Tools.tilesFor(tool, sel.x0, sel.y0, sel.x1, sel.y1);
     else if (Input.hover && World.inb(Input.hover.x, Input.hover.y)) tiles = [World.idx(Input.hover.x, Input.hover.y)];
     if (!tiles) return;
     const TS = Config.TILE, ctx = this.ctx;
@@ -359,12 +361,12 @@ const Renderer = {
       }
       this.rect(wx, wy, TS, TS, valid ? 'rgba(120,230,140,0.30)' : 'rgba(255,80,80,0.25)');
     }
-    if (Input.drag) {
-      const dr = Input.drag;
+    if (sel) {
+      const dr = sel;
       const ax = Math.min(dr.x0, dr.x1), ay = Math.min(dr.y0, dr.y1), bx = Math.max(dr.x0, dr.x1), by = Math.max(dr.y0, dr.y1);
       const x0 = this.X(ax * TS), y0 = this.Y(ay * TS);
-      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = Input.drag ? 'rgba(255,255,255,0.85)' : '#ffd35a';
+      ctx.lineWidth = 2 * this.dpr;
       ctx.strokeRect(x0, y0, this.X((bx + 1) * TS) - x0, this.Y((by + 1) * TS) - y0);
       const label = `${bx - ax + 1}×${by - ay + 1}  ✔ ${ok}` + (d.build ? `  (${Tools.costText(tool, ok)})` : '');
       ctx.font = `${Math.round(18 * this.dpr)}px VT323, monospace`;
@@ -401,7 +403,7 @@ const Renderer = {
   // ---------- Den a noc ----------
   lightSources() {
     const out = [];
-    for (const i of World.structSet) {
+    for (const i of World.lights) {
       const s = World.struct[i];
       const def = s && BUILD[s.type];
       if (def && def.light) out.push({ x: (i % World.w) + 0.5, y: ((i / World.w) | 0) + 0.5, r: def.light, fire: s.type === 'campfire' });

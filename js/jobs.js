@@ -10,12 +10,12 @@ const Jobs = (() => {
   const iy = i => (i / World.w) | 0;
 
   /** Chůze k cíli; cesta se spočítá jen jednou pro danou fázi úkolu. */
-  function walk(c, j, x, y, mode) {
+  function walk(c, j, x, y, mode, failKey) {
     const key = j.stage + ':' + x + ',' + y + ',' + mode;
     if (j.walkKey !== key) {
       j.walkKey = key;
       if (!c.pathTo(x, y, mode)) {
-        c.unreach.set(j.key || ('t' + World.idx(x, y)), TimeSys.minutes + 90);
+        c.unreach.set(failKey || j.key || ('t' + World.idx(x, y)), TimeSys.minutes + 90);
         return 'fail';
       }
     }
@@ -34,13 +34,9 @@ const Jobs = (() => {
     }
     return best;
   }
-  function anyItem(type) {
-    for (const i of World.itemSet) {
-      const it = World.items[i];
-      if (it && it.type === type && Game.availItem(i) > 0) return true;
-    }
-    return false;
-  }
+  /** Je někde volný (nerezervovaný) kus dané suroviny? O(1) díky průběžným počtům. */
+  function anyItem(type) { return World.counts[type] - Game.resType[type] > 0; }
+  function hasFood() { return anyItem('meal') || anyItem('food'); }
 
   function findStockDest(type, c) {
     let best = -1, bs = Infinity;
@@ -54,17 +50,23 @@ const Jobs = (() => {
     }
     return best;
   }
+  // místo ve skladu podle typu – přepočítá se jen po změně předmětů nebo zón
+  let spaceVer = -1, spaceCache = {};
   function hasStockSpace(type) {
+    if (spaceVer !== World.itemVer) { spaceVer = World.itemVer; spaceCache = {}; }
+    if (spaceCache[type] !== undefined) return spaceCache[type];
+    let ok = false;
     for (const i of World.stockTiles) {
-      if (!World.canHoldItem(i) || Game.isReserved('d' + i)) continue;
+      if (!World.canHoldItem(i)) continue;
       const it = World.items[i];
-      if (!it || (it.type === type && it.n < Config.STACK)) return true;
+      if (!it || (it.type === type && it.n < Config.STACK)) { ok = true; break; }
     }
-    return false;
+    return (spaceCache[type] = ok);
   }
 
   function findFood(c) {
-    let i = nearestItem(['meal'], c);
+    if (!hasFood()) return -1;
+    let i = anyItem('meal') ? nearestItem(['meal'], c) : -1;
     if (i < 0) i = nearestItem(['food'], c);
     return i;
   }
@@ -85,63 +87,84 @@ const Jobs = (() => {
   }
 
   // ---------- Generátory kandidátů podle pracovních typů ----------
+  // Vycházejí z průběžně udržovaných seznamů ve World (žádné procházení celé mapy).
   const candidates = {
-    cook(c) {
-      const counts = World.countItems();
-      if (counts.meal >= Game.colonists.length * 4 || !anyItem('food')) return [];
-      return World.structsOfType('campfire')
-        .filter(i => !World.struct[i].decon)
-        .map(i => ({ type: 'cook', i, key: 'o' + i }));
+    cook() {
+      if (World.counts.meal >= Game.colonists.length * 4 || !anyItem('food')) return [];
+      const out = [];
+      const fires = World.structBy.campfire;
+      if (fires) for (const i of fires) if (!World.struct[i].decon) out.push({ type: 'cook', i, key: 'o' + i });
+      return out;
     },
-    build(c) {
+    build() {
       const out = [];
       for (const i of World.bpSet) {
         const m = World.bpMissing(i);
         if (m && !anyItem(m)) continue;
-        // na políčku blokující stavby nesmí ležet jiný kolonista (kromě něj samého)
         out.push({ type: 'build', i, key: 'o' + i });
       }
       for (const i of World.deconSet) out.push({ type: 'decon', i, key: 'o' + i });
       return out;
     },
-    grow(c) {
+    grow() {
       const out = [];
-      const day = TimeSys.daylight() > 0.2;
-      for (const i of World.farmTiles) {
-        const cr = World.crops[i];
-        if (cr && cr.g >= 1) out.push({ type: 'harvest', i, key: 'o' + i });
-        else if (day && World.canSow(i)) out.push({ type: 'sow', i, key: 'o' + i });
+      for (const i of World.ripeSet) out.push({ type: 'harvest', i, key: 'o' + i });
+      if (TimeSys.daylight() > 0.2) {
+        for (const i of World.emptyFarm) if (World.canSow(i)) out.push({ type: 'sow', i, key: 'o' + i });
       }
-      for (const i of World.desSet) {
+      for (const i of World.des.harvest) {
         const o = World.obj[i];
-        if (o && o.des === 'harvest' && o.berries) out.push({ type: 'pick', i, key: 'o' + i });
+        if (o && o.berries) out.push({ type: 'pick', i, key: 'o' + i });
       }
       return out;
     },
-    mine(c) {
+    chop() {
       const out = [];
-      for (const i of World.desSet) {
-        const o = World.obj[i];
-        if (!o) continue;
-        if (o.des === 'chop') out.push({ type: 'chop', i, key: 'o' + i });
-        else if (o.des === 'mine') out.push({ type: 'mine', i, key: 'o' + i });
-      }
+      for (const i of World.des.chop) out.push({ type: 'chop', i, key: 'o' + i });
       return out;
     },
-    haul(c) {
+    mine() {
       const out = [];
-      const space = {};
-      for (const i of World.itemSet) {
-        if (World.zone[i] === 1) continue;
+      for (const i of World.des.mine) out.push({ type: 'mine', i, key: 'o' + i });
+      return out;
+    },
+    haul() {
+      const out = [];
+      for (const i of World.looseSet) {
         const it = World.items[i];
-        if (!it || Game.availItem(i) <= 0) continue;
-        if (space[it.type] === undefined) space[it.type] = hasStockSpace(it.type);
-        if (!space[it.type]) continue;
+        if (!it || Game.availItem(i) <= 0 || !hasStockSpace(it.type)) continue;
         out.push({ type: 'haul', i, key: 'i' + i });
       }
       return out;
     },
   };
+
+  /**
+   * Naplánuje hromadné zásobování: k plánu `i` přibere sousední plány, které
+   * potřebují stejný materiál `m`, dokud se náklad vejde do rukou.
+   */
+  function planBatch(c, i, m) {
+    const batch = [i];
+    let total = World.bpNeed(i, m);
+    if (total >= Config.CARRY) return { batch, total };
+    const x = ix(i), y = iy(i), R = Config.BATCH_RADIUS, now = TimeSys.minutes;
+    const near = [];
+    for (const b of World.bpSet) {
+      if (b === i) continue;
+      const cost = BUILD[World.bp[b].type].cost[m];
+      if (!cost || World.bpNeed(b, m) <= 0) continue;
+      const d = Math.max(Math.abs(ix(b) - x), Math.abs(iy(b) - y));
+      if (d > R || Game.isReserved('o' + b, c) || (c.unreach.get('o' + b) || 0) > now) continue;
+      near.push([d, b]);
+    }
+    near.sort((p, q) => p[0] - q[0]);
+    for (const [, b] of near) {
+      if (total >= Config.CARRY) break;
+      batch.push(b);
+      total += World.bpNeed(b, m);
+    }
+    return { batch, total };
+  }
 
   /** Vybere nejlepší práci pro kolonistu podle priorit (1 nejvyšší) a vzdálenosti. */
   function findWork(c) {
@@ -165,68 +188,113 @@ const Jobs = (() => {
 
   // ---------- Drivery úkolů ----------
   const drivers = {
-    chop(c, j) { return gather(c, j, 'chop', 'Kácí strom', 'mine'); },
+    chop(c, j) { return gather(c, j, 'chop', 'Kácí strom', 'chop'); },
     mine(c, j) { return gather(c, j, 'mine', 'Těží', 'mine'); },
     pick(c, j) { return gather(c, j, 'harvest', 'Sbírá bobule', 'grow'); },
 
+    /**
+     * Stavba. Fáze: 0 plán nákladu → 1 pro materiál → 2 rozvoz po plánech v dávce
+     * → 3 chůze ke stavbě → 4 stavění. Kolonista nabere materiál pro víc sousedních
+     * plánů najednou, obejde je a poslední zásobený plán rovnou postaví; ostatní
+     * uvolní, aby je mohl postavit kdokoli.
+     */
     build(c, j) {
+      if (j.stage === 0) {
+        if (!World.bp[j.i]) return FAIL;
+        const m = World.bpMissing(j.i);
+        if (!m) { j.stage = 3; return; }
+        j.mat = m;
+        const plan = planBatch(c, j.i, m);
+        let have = c.carry && c.carry.type === m ? c.carry.n : 0;
+        j.src = -1;
+        if (have < plan.total) {
+          const src = nearestItem([m], c);
+          if (src >= 0) {
+            const amt = Math.min(plan.total - have, Game.availItem(src), Config.CARRY - have);
+            if (amt > 0) { Game.reserveItem(src, amt, c); j.src = src; j.amt = amt; have += amt; }
+          }
+        }
+        if (have <= 0) return FAIL;
+        // ponechat jen tolik plánů, kolik náklad pokryje
+        j.batch = [];
+        let acc = 0;
+        for (const b of plan.batch) {
+          if (acc >= have) break;
+          if (b !== j.i && !Game.reserve('o' + b, c)) continue;
+          j.batch.push(b);
+          acc += World.bpNeed(b, m);
+        }
+        j.last = -1;
+        j.stage = j.src >= 0 ? 1 : 2;
+        c.activity = 'Nese materiál (' + ITEMS[m].name.toLowerCase() + ')';
+      }
+      if (j.stage === 1) {
+        const r = walk(c, j, ix(j.src), iy(j.src), 0, 'i' + j.src);
+        if (r === 'fail') return FAIL;
+        if (r === 'moving') return;
+        if (!c.pickup(j.src, j.amt, j.mat) && !(c.carry && c.carry.type === j.mat)) return FAIL;
+        j.stage = 2;
+      }
+      if (j.stage === 2) {
+        const carrying = c.carry && c.carry.type === j.mat;
+        // vybrat nejbližší plán z dávky, který ještě materiál potřebuje
+        let b = -1, bd = Infinity;
+        if (carrying) for (const q of j.batch) {
+          if (!World.bp[q] || World.bpNeed(q, j.mat) <= 0) continue;
+          const d = Math.abs(ix(q) - c.tx) + Math.abs(iy(q) - c.ty);
+          if (d < bd) { bd = d; b = q; }
+        }
+        if (b < 0) {
+          // rozvoz hotov → zbylé rezervace uvolnit, poslední zásobený plán postavit
+          for (const q of j.batch) if (q !== j.last) Game.release('o' + q, c);
+          j.batch = [];
+          if (j.last >= 0) j.i = j.last;
+          if (!World.bp[j.i] || !Game.reserve('o' + j.i, c)) return DONE;
+          j.stage = World.bpMissing(j.i) ? 0 : (j.last >= 0 ? 4 : 3);
+          return;
+        }
+        c.activity = j.batch.length > 1 ? `Rozváží materiál (${j.batch.length} plánů)` : 'Nese materiál na stavbu';
+        const mode = BUILD[World.bp[b].type].blocks ? 2 : 1;
+        const r = walk(c, j, ix(b), iy(b), mode, 'o' + b);
+        if (r === 'fail') {
+          j.batch = j.batch.filter(q => q !== b);
+          if (b !== j.i) Game.release('o' + b, c);
+          j.walkKey = null;
+          return j.batch.length ? undefined : FAIL;
+        }
+        if (r === 'moving') return;
+        const give = Math.min(World.bpNeed(b, j.mat), c.carry.n);
+        const bp = World.bp[b];
+        bp.del[j.mat] = (bp.del[j.mat] || 0) + give;
+        c.carry.n -= give;
+        if (c.carry.n <= 0) c.carry = null;
+        if (j.last >= 0 && j.last !== b) Game.release('o' + j.last, c);
+        j.last = b;
+        j.batch = j.batch.filter(q => q !== b);
+        j.walkKey = null;
+        return;
+      }
       const i = j.i, bp = World.bp[i];
       if (!bp) return FAIL;
       const def = BUILD[bp.type];
       const bx = ix(i), by = iy(i), mode = def.blocks ? 2 : 1;
-      if (j.stage === 0) {
-        const m = World.bpMissing(i);
-        if (!m) { j.stage = 3; return; }
-        j.mat = m;
-        if (c.carry && c.carry.type === m) { j.stage = 2; return; }
-        const src = nearestItem([m], c);
-        if (src < 0) return FAIL;
-        const amt = Math.min(World.bpNeed(i, m), Game.availItem(src), Config.CARRY);
-        Game.reserveItem(src, amt, c);
-        j.src = src; j.amt = amt; j.stage = 1;
-        c.activity = 'Nese materiál (' + ITEMS[m].name.toLowerCase() + ')';
-      }
-      if (j.stage === 1) {
-        const r = walk(c, j, ix(j.src), iy(j.src), 0);
-        if (r === 'fail') { c.unreach.set('i' + j.src, TimeSys.minutes + 60); return FAIL; }
-        if (r === 'moving') return;
-        if (!c.pickup(j.src, j.amt, j.mat)) return FAIL;
-        j.stage = 2;
-      }
-      if (j.stage === 2) {
-        c.activity = 'Nese materiál na stavbu';
-        const r = walk(c, j, bx, by, mode);
-        if (r === 'fail') return FAIL;
-        if (r === 'moving') return;
-        if (c.carry && c.carry.type === j.mat) {
-          const give = Math.min(World.bpNeed(i, j.mat), c.carry.n);
-          bp.del[j.mat] = (bp.del[j.mat] || 0) + give;
-          c.carry.n -= give;
-          if (c.carry.n <= 0) c.carry = null;
-        }
-        if (World.bpMissing(i)) { j.stage = 0; return; }
-        j.stage = 4;
-        return;
-      }
       if (j.stage === 3) {
         c.activity = 'Jde stavět: ' + def.name.toLowerCase();
-        const r = walk(c, j, bx, by, mode);
+        const r = walk(c, j, bx, by, mode, 'o' + i);
         if (r === 'fail') return FAIL;
         if (r === 'moving') return;
         j.stage = 4;
       }
       if (j.stage === 4) {
-        if (def.blocks && c.tx === bx && c.ty === by) { j.stage = 3; j.walkKey = null; return; }
+        const far = Math.max(Math.abs(c.tx - bx), Math.abs(c.ty - by)) > 1;
+        if (far || (def.blocks && c.tx === bx && c.ty === by)) { j.stage = 3; j.walkKey = null; return; }
         c.activity = 'Staví: ' + def.name.toLowerCase();
         c.face(bx, by);
         j.progress += c.work('build');
         c.workFrac = j.progress / def.work;
-        bp.progress = c.workFrac;
         if (j.progress >= def.work) {
-          // zkontrolovat, zda na blokující stavbě nestojí kolonista
           World.completeBlueprint(i);
           Game.onTileChanged(bx, by);
-          if (c.carry) { World.dropItem(c.tx, c.ty, c.carry.type, c.carry.n); c.carry = null; }
           return DONE;
         }
       }
@@ -270,8 +338,7 @@ const Jobs = (() => {
       j.progress += c.work('grow');
       c.workFrac = j.progress / 28;
       if (j.progress >= 28) {
-        World.crops[i] = { g: 0 };
-        World.cropSet.add(i);
+        World.setCrop(i, 0);
         return DONE;
       }
     },
@@ -290,8 +357,7 @@ const Jobs = (() => {
       j.progress += c.work('grow');
       c.workFrac = j.progress / 32;
       if (j.progress >= 32) {
-        World.crops[i] = null;
-        World.cropSet.delete(i);
+        World.removeCrop(i);
         const yieldN = Math.round(6 * (0.85 + c.skills.grow.lvl * 0.04));
         World.dropItem(x, y, 'food', yieldN);
         return DONE;
@@ -354,7 +420,7 @@ const Jobs = (() => {
         const it = World.items[i];
         if (!it) return FAIL;
         const dest = findStockDest(it.type, c);
-        if (dest < 0) return FAIL;
+        if (dest < 0) { c.unreach.set(j.key, TimeSys.minutes + 20); return FAIL; }
         if (!Game.reserve('d' + dest, c)) return FAIL;
         const amt = Math.min(Game.availItem(i), Config.CARRY);
         if (amt <= 0) return FAIL;
@@ -484,7 +550,7 @@ const Jobs = (() => {
     if (j.progress < need) return;
     if (o.type === 'tree') {
       World.removeObj(i);
-      World.dropItem(x, y, 'wood', Math.round(10 * o.size + c.skills.mine.lvl * 0.15));
+      World.dropItem(x, y, 'wood', Math.round(10 * o.size + c.skills.chop.lvl * 0.15));
     } else if (o.type === 'rock') {
       World.removeObj(i);
       World.dropItem(x, y, 'stone', U.int(5, 7));
@@ -501,5 +567,5 @@ const Jobs = (() => {
     return DONE;
   }
 
-  return { DONE, FAIL, drivers, findWork, findFood, findBed, nearestItem, anyItem, candidates };
+  return { DONE, FAIL, drivers, findWork, findFood, hasFood, findBed, nearestItem, anyItem, candidates };
 })();

@@ -15,6 +15,10 @@ const Config = {
   ZOOM_DEFAULT: 2.6,
   CROP_HOURS: 42,          // doba růstu plodiny (herní hodiny při plodnosti 1)
   BUSH_REGROW_HOURS: 40,
+  TREE_GROW_PER_HOUR: 0.004,
+  SPEEDS: [0, 1, 2, 3, 4],
+  AUTO_FAST_SPEED: 10,     // rychlost, když všichni spí (volitelné)
+  BATCH_RADIUS: 8,         // dosah pro hromadné zásobování sousedních plánů
 };
 Config.HOURS_PER_TICK = Config.MIN_PER_TICK / 60;
 
@@ -62,13 +66,14 @@ const BUILD = {
 
 // Pracovní typy (pořadí = pořadí při stejné prioritě)
 const WORK_TYPES = [
-  { id: 'cook',  name: 'Vaření',    skill: 'cook' },
-  { id: 'build', name: 'Stavba',    skill: 'build' },
-  { id: 'grow',  name: 'Farmaření', skill: 'grow' },
-  { id: 'mine',  name: 'Těžba',     skill: 'mine' },
-  { id: 'haul',  name: 'Nošení',    skill: null },
+  { id: 'cook',  name: 'Vaření',    short: 'Vař.',  skill: 'cook' },
+  { id: 'build', name: 'Stavba',    short: 'Stav.', skill: 'build' },
+  { id: 'grow',  name: 'Farmaření', short: 'Farm.', skill: 'grow' },
+  { id: 'chop',  name: 'Kácení',    short: 'Kác.',  skill: 'chop' },
+  { id: 'mine',  name: 'Těžba',     short: 'Těž.',  skill: 'mine' },
+  { id: 'haul',  name: 'Nošení',    short: 'Noš.',  skill: null },
 ];
-const SKILLS = { build: 'Stavba', mine: 'Těžba', grow: 'Farmaření', cook: 'Vaření' };
+const SKILLS = { build: 'Stavba', chop: 'Dřevorubectví', mine: 'Těžba', grow: 'Farmaření', cook: 'Vaření' };
 
 const TRAITS = [
   { id: 'optimist', name: 'Optimista',    desc: '+8 nálada', mood: 8 },
