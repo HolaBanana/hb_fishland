@@ -1,0 +1,50 @@
+# Sestaví hru do jednoho souboru a nasadí ji na GitHub Pages.
+# Jednorázové nastavení v repozitáři: Settings → Pages → Source: "GitHub Actions".
+name: Nasazení na GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'js/**'
+      - 'css/**'
+      - 'fonts/**'
+      - 'index.html'
+      - 'build.py'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Kontrola syntaxe skriptů
+        run: for f in js/*.js; do node --check "$f"; done
+      - name: Sestavení kolonie.html
+        run: python3 build.py --site _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

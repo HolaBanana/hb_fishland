@@ -36,6 +36,8 @@ const Main = {
 window.addEventListener('DOMContentLoaded', () => {
   const params = Main.params = new URLSearchParams(location.search);
   try { Game.autoFast = localStorage.getItem('kolonie.autoFast') === '1'; } catch (e) { /* bez úložiště */ }
+  // písmo se používá i na plátně – vyžádat si ho hned
+  if (document.fonts && document.fonts.load) document.fonts.load('16px VT323').catch(() => {});
   Sprites.init();
   if (params.has('seed')) { Main.boot(null, parseInt(params.get('seed'), 10) || 1); return; }
   const saved = Save.peek();

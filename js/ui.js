@@ -459,7 +459,8 @@ const UI = {
         <li><b>Stavba → Ohniště</b>: na něm se vaří teplé jídlo (lepší nálada).</li>
         <li><b>Zóny → Pole</b>: na úrodné půdě (tmavá hlína) rostou brambory rychleji.</li>
         <li><b>Stavba → Postel</b> pro každého kolonistu, kolem postav <b>zdi</b> a <b>dveře</b>.</li>
-        <li><b>Příkazy → Těžit</b> skálu (kámen) a železnou rudu (oranžové žilky) na lampy.</li>
+        <li><b>Příkazy → Těžit</b> skálu (kámen) a ložiska železné rudy (oranžové žilky).</li>
+        <li><b>Výroba</b>: postav Pilu a Pec (prkna a železné pláty) a Výzkumný stůl – od třetího dne se vyplatí první stroje.</li>
       </ol>
       <h4>Automatizace</h4>
       <ul>
