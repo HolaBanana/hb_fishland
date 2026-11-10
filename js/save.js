@@ -21,11 +21,21 @@ const Save = {
       const o = W.obj[i], base = W.baseType[i];
       if (!o) { if (base) objRemoved.push(i); continue; }
       // nezměněné objekty se neukládají (stromy dorůstají podle uplynulého času)
-      const same = CODE[o.type] === base && !o.des && (o.type !== 'bush' || o.berries);
+      const same = CODE[o.type] === base && !o.des && (o.type !== 'bush' || o.berries) && (o.type !== 'ore' || o.amount === Config.ORE_AMOUNT);
       if (!same) objSet.push([i, o]);
     }
     const struct = [], floor = [], items = [], crops = [], bp = [], stock = [], farm = [];
-    for (const i of W.structSet) { const s = W.struct[i]; struct.push([i, s.type, s.decon ? 1 : 0, s.owner]); }
+    for (const i of W.structSet) {
+      const s = W.struct[i];
+      const row = [i, s.type, s.decon ? 1 : 0, s.owner, s.dir || 0];
+      // stav stroje: zásobníky, postup, cíl výroby, hoření, opotřebení
+      if (BUILD[s.type].machine) {
+        const st = {};
+        for (const k of ['inv', 'out', 'prog', 'target', 'burn', 'wear', 'broken']) if (s[k] !== undefined) st[k] = s[k];
+        row.push(st);
+      }
+      struct.push(row);
+    }
     for (let i = 0; i < n; i++) {
       const f = W.floor[i];
       if (f) floor.push([i, f.type, f.decon ? 1 : 0]);
@@ -35,7 +45,7 @@ const Save = {
     const filter = [];
     for (const i of W.stockTiles) if (W.filter[i]) filter.push([i, W.filter[i]]);
     for (const i of W.cropSet) crops.push([i, +W.crops[i].g.toFixed(4)]);
-    for (const i of W.bpSet) bp.push([i, W.bp[i].type, W.bp[i].del]);
+    for (const i of W.bpSet) bp.push([i, W.bp[i].type, W.bp[i].del, W.bp[i].dir || 0]);
     // pořadí množin závisí na historii → seřadit, ať je uložení deterministické
     for (const arr of [struct, items, crops, bp]) arr.sort((p, q) => p[0] - q[0]);
 
@@ -56,6 +66,7 @@ const Save = {
       events: Events.pack(),
       stats: Game.stats,
       nextId: Game.nextId,
+      research: Research.pack(),
       colonists: Game.colonists.map(c => this.packColonist(c)),
     };
   },
@@ -101,17 +112,17 @@ const Save = {
       if (o && o.type === 'tree') o.size = Math.min(1, W.baseSize[i] + hours * Config.TREE_GROW_PER_HOUR);
     }
     for (const i of w.objRemoved) W.obj[i] = null;
-    for (const [i, o] of w.objSet) W.obj[i] = o;
+    for (const [i, o] of w.objSet) { if (o.type === 'ore' && o.amount === undefined) o.amount = Config.ORE_AMOUNT; W.obj[i] = o; }
 
     // ostatní vrstvy se nahrazují celé
     W.items.fill(null); W.struct.fill(null); W.floor.fill(null); W.crops.fill(null); W.bp.fill(null); W.zone.fill(0);
-    for (const [i, type, decon, owner] of w.struct) W.struct[i] = { type, decon: !!decon, owner };
+    for (const [i, type, decon, owner, dir, st] of w.struct) { if (BUILD[type]) W.makeStruct(i, type, dir || 0, Object.assign({ decon: !!decon, owner }, st)); }
     for (const [i, type, decon] of w.floor) W.floor[i] = { type, decon: !!decon };
     for (const [i, type, k, age] of w.items) W.items[i] = { type, n: k, age: age || 0 };
     W.filter.fill(0);
     for (const [i, m] of w.filter || []) W.filter[i] = m;
     for (const [i, g] of w.crops) W.crops[i] = { g };
-    for (const [i, type, del] of w.bp) W.bp[i] = { type, del: del || {} };
+    for (const [i, type, del, dir] of w.bp) { if (BUILD[type]) { W.placeBlueprint(i, type, dir || 0); W.bp[i].del = del || {}; } }
     for (const i of w.stock) W.zone[i] = 1;
     for (const i of w.farm) W.zone[i] = 2;
     W.rebuildIndex();
@@ -125,6 +136,8 @@ const Save = {
     for (const [i, t] of d.fire || []) Fire.tiles.set(i, { t });
     Animals.unpack(d.animals);
     Events.unpack(d.events);
+    Research.unpack(d.research);
+    Power.reset();
     Game.tickCount = d.tick || 0;
     Game.lastSpeed = d.speed || 1;
     Object.assign(Weather, d.weather);

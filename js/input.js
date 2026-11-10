@@ -118,9 +118,10 @@ const Input = {
    */
   commit(d, pointerType) {
     const sel = { tool: Game.tool, x0: d.x0, y0: d.y0, x1: d.x1, y1: d.y1 };
+    sel.dir = Tools.dirFor(sel.tool, sel.x0, sel.y0, sel.x1, sel.y1);
     if (pointerType === 'mouse') {
       Game.setPending(null);
-      Tools.apply(sel.tool, Tools.tilesFor(sel.tool, sel.x0, sel.y0, sel.x1, sel.y1));
+      Tools.apply(sel.tool, Tools.tilesFor(sel.tool, sel.x0, sel.y0, sel.x1, sel.y1), sel.dir);
     } else Game.setPending(sel);
   },
 
@@ -155,6 +156,7 @@ const Input = {
         else Game.select(null);
       }
       else if (k === 'enter') Game.confirmPending();
+      else if (k === 'r') Game.rotate();
       else if (k === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); Tools.undo(); }
       else if (k === '+' || k === '=') Camera.setZoom(Camera.zoom * 1.2);
       else if (k === '-') Camera.setZoom(Camera.zoom / 1.2);

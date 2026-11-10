@@ -39,6 +39,32 @@ const Renderer = {
     const x0 = this.X(wx), y0 = this.Y(wy);
     this.ctx.drawImage(im, x0, y0, this.X(wx + ww) - x0, this.Y(wy + wh) - y0);
   },
+  /** Obrázek otočený o dir×90° (vejde se do stejného obdélníku; u lichého směru se prohodí rozměry). */
+  imgRot(im, wx, wy, ww, wh, dir) {
+    if (!dir) { this.img(im, wx, wy, ww, wh); return; }
+    const ctx = this.ctx, x0 = this.X(wx), y0 = this.Y(wy), w = this.X(wx + ww) - x0, h = this.Y(wy + wh) - y0;
+    ctx.save();
+    ctx.translate(x0 + w / 2, y0 + h / 2);
+    ctx.rotate(dir * Math.PI / 2);
+    if (dir & 1) ctx.drawImage(im, -h / 2, -w / 2, h, w); else ctx.drawImage(im, -w / 2, -h / 2, w, h);
+    ctx.restore();
+  },
+  /** Rozměr stavby ve světových pixelech podle otočení. */
+  sizeOf(type, dir) {
+    const sz = BUILD[type].size, TS = Config.TILE;
+    if (!sz) return [TS, TS];
+    return dir & 1 ? [sz[1] * TS, sz[0] * TS] : [sz[0] * TS, sz[1] * TS];
+  },
+  /** Sprite stavby včetně otočení (pás podle směru, větší stavby o 90°). */
+  buildSprite(type, wx, wy, dir) {
+    const def = BUILD[type], [fw, fh] = this.sizeOf(type, dir);
+    if (def.machine && def.machine.belt) {
+      this.imgRot(Sprites.build.belt, wx, wy, fw, fh, dir);
+      this.imgRot(Sprites.beltArrow[Game.speed > 0 ? Math.floor(this.time * 6) % 3 : 0], wx, wy, fw, fh, dir);
+    } else if (def.size) this.imgRot(Sprites.build[type], wx, wy, fw, fh, dir & 1);
+    else this.img(Sprites.build[type], wx, wy, fw, fh);
+    if (def.rot && def.machine && !def.machine.belt) this.imgRot(Sprites.arrow, wx + 4, wy + 4, 8, 8, dir);
+  },
   rect(wx, wy, ww, wh, col) {
     const x0 = this.X(wx), y0 = this.Y(wy);
     this.ctx.fillStyle = col;
@@ -111,6 +137,11 @@ const Renderer = {
         }
         const bp = World.bp[i];
         if (bp && BUILD[bp.type].layer === 'floor') this.drawBlueprint(bp, wx, wy);
+        const st = World.struct[i];
+        if (st && BUILD[st.type].machine && BUILD[st.type].machine.belt) {
+          this.buildSprite(st.type, wx, wy, st.dir);
+          if (st.decon) this.img(Sprites.des.decon, wx + 4, wy + 4, 8, 8);
+        }
         if (showGrid) {
           this.rect(wx, wy, TS, 0.5 / Camera.zoom * 1.2, 'rgba(255,255,255,0.07)');
           this.rect(wx, wy, 0.5 / Camera.zoom * 1.2, TS, 'rgba(255,255,255,0.07)');
@@ -136,7 +167,15 @@ const Renderer = {
     for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) {
       const it = World.items[y * W + x];
       if (!it) continue;
-      const wx = x * TS, wy = y * TS;
+      let wx = x * TS, wy = y * TS;
+      const bs = World.struct[y * W + x];
+      if (bs && BUILD[bs.type].machine && BUILD[bs.type].machine.belt) {
+        // hromádka na pásu plynule klouže ve směru pásu
+        const ph = Game.speed > 0 ? (Game.tickCount % Config.BELT_PERIOD) / Config.BELT_PERIOD - 0.5 : 0;
+        this.img(Sprites.items[it.type], wx + 3 + DIRS4[bs.dir][0] * ph * TS, wy + 2 + DIRS4[bs.dir][1] * ph * TS, 10, 10);
+        continue;
+      }
+      if (bs && BUILD[bs.type].storage) continue;   // obsah truhly není vidět
       this.img(Sprites.items[it.type], wx + 1, wy, 14, 14);
       if (Camera.zoom >= 1.6) {
         const s = String(it.n);
@@ -151,15 +190,16 @@ const Renderer = {
 
   drawBlueprint(bp, wx, wy) {
     const TS = Config.TILE, ctx = this.ctx;
+    const [fw, fh] = this.sizeOf(bp.type, bp.dir || 0);
     ctx.globalAlpha = 0.45;
-    this.img(Sprites.build[bp.type], wx, wy, TS, TS);
+    this.buildSprite(bp.type, wx, wy, bp.dir || 0);
     ctx.globalAlpha = 1;
-    this.rect(wx, wy, TS, TS, 'rgba(80,160,255,0.28)');
+    this.rect(wx, wy, fw, fh, 'rgba(80,160,255,0.28)');
     const x0 = this.X(wx), y0 = this.Y(wy);
     ctx.strokeStyle = 'rgba(140,200,255,0.9)';
     ctx.lineWidth = Math.max(1, this.z * 0.6);
     ctx.setLineDash([this.z * 2, this.z * 2]);
-    ctx.strokeRect(x0 + 1, y0 + 1, this.X(wx + TS) - x0 - 2, this.Y(wy + TS) - y0 - 2);
+    ctx.strokeRect(x0 + 1, y0 + 1, this.X(wx + fw) - x0 - 2, this.Y(wy + fh) - y0 - 2);
     ctx.setLineDash([]);
     // dodaný materiál
     const cost = BUILD[bp.type].cost;
@@ -187,9 +227,9 @@ const Renderer = {
         const o = World.obj[i];
         if (o) this.drawObj(o, i, x, y, wx, wy);
         const s = World.struct[i];
-        if (s) this.drawStruct(s, i, x, y, wx, wy);
+        if (s && s.i === i && !(BUILD[s.type].machine && BUILD[s.type].machine.belt)) this.drawStruct(s, i, x, y, wx, wy);
         const bp = World.bp[i];
-        if (bp && BUILD[bp.type].layer === 'struct') this.drawBlueprint(bp, wx, wy);
+        if (bp && bp.i === i && BUILD[bp.type].layer === 'struct') this.drawBlueprint(bp, wx, wy);
       }
       for (const a of Animals.list) if (Math.floor(a.y) === y) this.drawAnimal(a);
       const cs = byRow.get(y);
@@ -253,10 +293,74 @@ const Renderer = {
     } else if (s.type === 'campfire') {
       this.img(Sprites.build.campfire, wx, wy, TS, TS);
       this.drawFlame(wx + 8, wy + 9);
+    } else if (def.machine) {
+      this.drawMachine(s, def, wx, wy);
     } else {
       this.img(Sprites.build[s.type], wx, wy, TS, TS);
     }
     if (s.decon) this.img(Sprites.des.decon, wx + 4, wy + 4, 8, 8);
+  },
+
+  /** Dílny, stroje a zdroje energie: animace chodu, šipka výstupu, stavové ikony. */
+  drawMachine(s, def, wx, wy) {
+    const m = def.machine, ctx = this.ctx, t = this.time;
+    const run = Game.speed > 0;
+    const active = run && (s.on || (s.used !== undefined && Game.tickCount - s.used < 6));
+    const shake = active && (m.recipe || m.drill) && Math.sin(t * 45) > 0 ? 0.5 : 0;
+    this.buildSprite(s.type, wx, wy + shake, s.dir);
+    const [fw, fh] = this.sizeOf(s.type, s.dir);
+    if (m.gen === 'water') {
+      // lopatky kola
+      const out = Power.output(s) > 0 && run;
+      const a0 = out ? t * 1.6 : 0.3;
+      for (let k = 0; k < 8; k++) {
+        const a = a0 + k * Math.PI / 4;
+        const px = wx + 8 + Math.cos(a) * 6, py = wy + 7 + Math.sin(a) * 6;
+        this.rect(px - 1.2, py - 1.2, 2.4, 2.4, k & 1 ? '#b98a56' : '#8a5a30');
+        this.rect(wx + 8 + Math.cos(a) * 3 - 0.5, wy + 7 + Math.sin(a) * 3 - 0.5, 1, 1, '#6e4626');
+      }
+      this.rect(wx + 7, wy + 6, 2, 2, '#3c3e46');
+    } else if (m.gen === 'wind') {
+      const sp = run ? Power.output(s) / m.supply : 0;
+      s.spin = (s.spin || 0) + sp * 0.12;
+      const cx = this.X(wx + 16), cy = this.Y(wy + 10), L = 14 * this.z;
+      ctx.lineCap = 'butt';
+      for (let k = 0; k < 4; k++) {
+        const a = s.spin + k * Math.PI / 2;
+        ctx.strokeStyle = '#e8dcc0'; ctx.lineWidth = 3.2 * this.z;
+        ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * 2 * this.z, cy + Math.sin(a) * 2 * this.z); ctx.lineTo(cx + Math.cos(a) * L, cy + Math.sin(a) * L); ctx.stroke();
+        ctx.strokeStyle = '#6e4626'; ctx.lineWidth = 0.9 * this.z;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * L, cy + Math.sin(a) * L); ctx.stroke();
+      }
+      this.rect(wx + 15, wy + 9, 2, 2, '#3c3e46');
+    }
+    // kouř z komínů
+    if (active && (s.type === 'furnace' || s.type === 'autofurnace' || s.type === 'boiler')) {
+      const cx = s.type === 'boiler' ? wx + 23 : wx + 8;
+      for (let k = 0; k < 4; k++) {
+        const p = (t * 0.5 + k / 4) % 1;
+        this.rect(cx + Math.sin(k * 3 + t) * 2 + p * 4, wy - 2 - p * 14, 2 + p * 2, 2 + p * 2, `rgba(90,90,96,${0.5 * (1 - p)})`);
+      }
+    }
+    // postup výroby
+    if (s.prog > 0 && (m.recipe || m.drill) && (active || s.prog < 1)) {
+      this.rect(wx + 2, wy + fh - 3, fw - 4, 2, 'rgba(0,0,0,0.6)');
+      this.rect(wx + 2, wy + fh - 3, (fw - 4) * U.clamp(s.prog, 0, 1), 2, '#7ee07e');
+    }
+    // stavové ikony
+    let icon = null, col = '#ff6b5e';
+    if (s.broken) icon = '🔧';
+    else if (m.power && s.want && !s.on) icon = '⚡';
+    else if (m.gen === 'boiler' && !(s.burn > 0) && !(s.inv.wood >= 1)) { icon = '!'; col = '#ffb347'; }
+    if (icon && Math.sin(t * 5) > -0.3) {
+      ctx.font = `bold ${Math.round(9 * this.z)}px VT323, monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const x = this.X(wx + fw / 2), y = this.Y(wy + fh / 2 - 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.75)';
+      ctx.fillRect(x - 5 * this.z, y - 5 * this.z, 10 * this.z, 10 * this.z);
+      ctx.fillStyle = col;
+      ctx.fillText(icon, x, y);
+    }
   },
 
   drawFlame(cx, cy) {
@@ -376,16 +480,21 @@ const Renderer = {
     if (!tiles) return;
     const TS = Config.TILE, ctx = this.ctx;
     let ok = 0;
+    const dir = sel ? (sel.dir !== undefined ? sel.dir : Tools.dirFor(tool, sel.x0, sel.y0, sel.x1, sel.y1)) : Game.buildDir;
     for (const i of tiles) {
       const x = i % World.w, y = (i / World.w) | 0, wx = x * TS, wy = y * TS;
-      const valid = d.valid(i);
+      const valid = d.valid(i, dir);
       if (valid) ok++;
-      if (d.build && valid) {
-        ctx.globalAlpha = 0.6;
-        this.img(Sprites.build[d.build], wx, wy, TS, TS);
-        ctx.globalAlpha = 1;
+      let fw = TS, fh = TS;
+      if (d.build) {
+        [fw, fh] = this.sizeOf(d.build, dir);
+        if (valid) {
+          ctx.globalAlpha = 0.6;
+          this.buildSprite(d.build, wx, wy, dir);
+          ctx.globalAlpha = 1;
+        }
       }
-      this.rect(wx, wy, TS, TS, valid ? 'rgba(120,230,140,0.30)' : 'rgba(255,80,80,0.25)');
+      this.rect(wx, wy, fw, fh, valid ? 'rgba(120,230,140,0.30)' : 'rgba(255,80,80,0.25)');
     }
     if (sel) {
       const dr = sel;

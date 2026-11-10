@@ -11,12 +11,12 @@ const World = {
     this.w = w; this.h = h; this.n = w * h;
     const n = this.n;
     this.terrain = new Uint8Array(n);
-    this.obj = new Array(n).fill(null);     // {type, des, size, berries, regrow, variant}
-    this.struct = new Array(n).fill(null);  // {type, decon, owner}
+    this.obj = new Array(n).fill(null);     // {type, des, size, berries, regrow, amount}
+    this.struct = new Array(n).fill(null);  // {type, decon, owner, i, dir, tiles, + stav stroje}; u větších staveb sdílí objekt všechna políčka
     this.floor = new Array(n).fill(null);   // {type, decon}
     this.items = new Array(n).fill(null);   // {type, n, age} – age = stáří v hodinách (kažení)
     this.crops = new Array(n).fill(null);   // {g}
-    this.bp = new Array(n).fill(null);      // {type, del:{}}
+    this.bp = new Array(n).fill(null);      // {type, del:{}, i, dir, tiles}
     this.zone = new Uint8Array(n);          // 0 nic, 1 sklad, 2 pole
     this.filter = new Uint16Array(n);       // filtr surovin skladu (0 = vše)
     this.roof = new Uint8Array(n);          // 1 = pod střechou (uzavřená místnost)
@@ -50,6 +50,8 @@ const World = {
     this.structSet = new Set();
     this.structBy = {};             // typ stavby → Set indexů
     this.lights = new Set();        // stavby, které svítí
+    this.machines = new Set();      // stavby s vlastním tickem (stroje, pásy, zdroje)
+    this.belts = new Set();
     this.bushSet = new Set();
     this.stockTiles = [];
     this.farmTiles = [];
@@ -61,15 +63,16 @@ const World = {
     for (let i = 0; i < this.n; i++) {
       const it = this.items[i];
       if (it) { this.itemSet.add(i); this.counts[it.type] += it.n; }
-      if (this.bp[i]) this.bpSet.add(i);
+      if (this.bp[i] && this.bp[i].i === i) this.bpSet.add(i);
       const o = this.obj[i];
       if (o) {
         if (o.type === 'bush') this.bushSet.add(i);
         if (o.des) { this.desSet.add(i); this.des[o.des].add(i); }
       }
       const s = this.struct[i];
-      if (s) this.indexStruct(i, s.type, true);
-      if ((s && s.decon) || (this.floor[i] && this.floor[i].decon)) this.deconSet.add(i);
+      if (s && s.i === i) this.indexStruct(i, s.type, true);
+      if (s && s.decon) this.deconSet.add(s.i);
+      else if (!s && this.floor[i] && this.floor[i].decon) this.deconSet.add(i);
       const c = this.crops[i];
       if (c) { this.cropSet.add(i); if (c.g >= 1) this.ripeSet.add(i); }
       this.recalc(i);
@@ -79,11 +82,15 @@ const World = {
   },
   indexStruct(i, type, add) {
     this.roomsDirty = true;
+    Power.dirty = true;
     if (add) {
       this.structSet.add(i);
       (this.structBy[type] || (this.structBy[type] = new Set())).add(i);
       if (BUILD[type].light) this.lights.add(i);
+      const m = BUILD[type].machine;
+      if (m) { if (m.belt) this.belts.add(i); else this.machines.add(i); }
     } else {
+      this.machines.delete(i); this.belts.delete(i);
       this.structSet.delete(i);
       if (this.structBy[type]) this.structBy[type].delete(i);
       this.lights.delete(i);
@@ -137,8 +144,8 @@ const World = {
     const rockIdx = [];
     for (let i = 0; i < n; i++) if (this.obj[i]) rockIdx.push(i);
     const rockOre = rockIdx.map(i => oreN[i]);
-    const oreT = rockOre.length ? q(rockOre, 0.86) : 1;
-    for (const i of rockIdx) if (oreN[i] > oreT) this.obj[i].type = 'ore';
+    const oreT = rockOre.length ? q(rockOre, 0.9) : 1;
+    for (const i of rockIdx) if (oreN[i] > oreT) { this.obj[i].type = 'ore'; this.obj[i].amount = Config.ORE_AMOUNT; }
 
     // stromy a keře
     for (let i = 0; i < n; i++) {
@@ -273,8 +280,9 @@ const World = {
   stackCap(i) { return this.isChest(i) ? Config.CHEST_STACK : Config.STACK; },
   /** Povoluje filtr skladu na políčku daný druh suroviny? */
   allowed(i, type) { const f = this.filter[i]; return !(f & FILTER_CUSTOM) || !!(f & ITEM_BIT[type]); },
-  /** Leží hromádka „volně“ (mimo sklad nebo ve skladu, kam nepatří)? */
-  isLoose(i) { const it = this.items[i]; return !!it && (!this.isStock(i) || !this.allowed(i, it.type)); },
+  isBelt(i) { const s = this.struct[i]; return !!s && !!BUILD[s.type].machine && !!BUILD[s.type].machine.belt; },
+  /** Leží hromádka „volně“ (mimo sklad nebo ve skladu, kam nepatří)? Na pásu ne. */
+  isLoose(i) { const it = this.items[i]; return !!it && !this.isBelt(i) && (!this.isStock(i) || !this.allowed(i, it.type)); },
   /** Souvislý sklad (zóna) nebo jedna truhla, do které políčko patří. */
   stockRegion(i) {
     if (this.isChest(i)) return [i];
@@ -388,9 +396,36 @@ const World = {
   },
 
   // ---------- Stavby ----------
-  placeBlueprint(i, type) {
-    this.bp[i] = { type, del: {} };
+  /** Políčka, která stavba zabere (větší stavby, otočení o 90° prohodí rozměry). */
+  footprint(i, type, dir = 0) {
+    const size = BUILD[type].size;
+    if (!size) return [i];
+    const w = dir & 1 ? size[1] : size[0], h = dir & 1 ? size[0] : size[1];
+    const x = i % this.w, y = (i / this.w) | 0, out = [];
+    for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) {
+      if (!this.inb(x + dx, y + dy)) return null;
+      out.push(this.idx(x + dx, y + dy));
+    }
+    return out;
+  },
+  /** Sousední políčko ve směru dir (nebo -1 mimo mapu). */
+  step(i, dir) {
+    const x = (i % this.w) + DIRS4[dir][0], y = ((i / this.w) | 0) + DIRS4[dir][1];
+    return this.inb(x, y) ? this.idx(x, y) : -1;
+  },
+  placeBlueprint(i, type, dir = 0) {
+    const tiles = this.footprint(i, type, dir) || [i];
+    const bp = { type, del: {}, i, dir, tiles };
+    for (const t of tiles) this.bp[t] = bp;
     this.bpSet.add(i);
+  },
+  /** Vytvoří objekt stavby a položí ho na všechna její políčka. */
+  makeStruct(i, type, dir = 0, extra) {
+    const tiles = this.footprint(i, type, dir) || [i];
+    const s = Object.assign({ type, decon: false, owner: -1, i, dir, tiles }, extra);
+    Machines.init(s);
+    for (const t of tiles) this.struct[t] = s;
+    return s;
   },
   bpMissing(i) {
     const bp = this.bp[i];
@@ -406,29 +441,33 @@ const World = {
   cancelBlueprint(i) {
     const bp = this.bp[i];
     if (!bp) return;
-    this.bp[i] = null;
-    this.bpSet.delete(i);
-    const [x, y] = this.xy(i);
+    for (const t of bp.tiles) this.bp[t] = null;
+    this.bpSet.delete(bp.i);
+    const [x, y] = this.xy(bp.i);
     for (const m in bp.del) if (bp.del[m] > 0) this.dropItem(x, y, m, bp.del[m]);
   },
   completeBlueprint(i) {
     const bp = this.bp[i];
     if (!bp) return;
     const def = BUILD[bp.type];
-    this.bp[i] = null;
+    i = bp.i;
+    for (const t of bp.tiles) this.bp[t] = null;
     this.bpSet.delete(i);
     const [x, y] = this.xy(i);
     if (def.layer === 'floor') {
       this.floor[i] = { type: bp.type, decon: false };
     } else {
-      this.struct[i] = { type: bp.type, decon: false, owner: -1 };
+      const s = this.makeStruct(i, bp.type, bp.dir);
       this.indexStruct(i, bp.type, true);
-      this.removeCrop(i);
-      this.recalc(i);
-      // odsunout předměty z políčka
-      const it = this.items[i];
-      if (it && !def.storage) { const t = it.type, a = it.age, k = this.takeItem(i, it.n); this.dropItem(x, y, t, k, a); }
-      if (def.storage) this.rebuildZones();
+      const keep = def.storage || (def.machine && def.machine.belt);
+      for (const t of s.tiles) {
+        this.removeCrop(t);
+        this.recalc(t);
+        // odsunout předměty z políčka (truhla a pás si je nechají)
+        const it = this.items[t];
+        if (it && !keep) { const ty = it.type, a = it.age, k = this.takeItem(t, it.n); this.dropItem(x, y, ty, k, a); }
+      }
+      if (keep) this.rebuildZones();
     }
     this.recalc(i);
   },
@@ -454,13 +493,16 @@ const World = {
     const s = this.struct[i];
     if (!s) return;
     const def = BUILD[s.type];
+    i = s.i;
     this.indexStruct(i, s.type, false);
-    this.struct[i] = null;
+    for (const t of s.tiles) { this.struct[t] = null; this.recalc(t); }
     this.deconSet.delete(i);
-    this.recalc(i);
-    if (def.storage) {
-      const it = this.items[i], [x, y] = this.xy(i);
-      if (it) { const t = it.type, a = it.age, k = this.takeItem(i, it.n); this.dropItem(x, y, t, k, a); }
+    const [x, y] = this.xy(i);
+    // vysypat zásobníky stroje
+    for (const buf of [s.inv, s.out]) if (buf) for (const m in buf) if (buf[m] >= 1) this.dropItem(x, y, m, Math.floor(buf[m]));
+    if (def.storage || (def.machine && def.machine.belt)) {
+      const it = this.items[i];
+      if (it && def.storage) { const t = it.type, a = it.age, k = this.takeItem(i, it.n); this.dropItem(x, y, t, k, a); }
       this.rebuildZones();
     }
   },

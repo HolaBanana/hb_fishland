@@ -43,6 +43,23 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 #seasonLabel.s1 { color: #ffd35a; }
 #seasonLabel.s2 { color: #e9955a; }
 #seasonLabel.s3 { color: #a9d4ff; }
+.res.low span { color: var(--bad); }
+.res[title^="Energie"], .res[title^="Probíhající"] { cursor: pointer; }
+.target { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.target b { flex: 1; text-align: center; font-weight: normal; color: var(--accent); }
+.target button { width: 56px; height: 38px; font-size: 18px; background: var(--panel2); border: 2px solid var(--border); border-radius: 3px; }
+.techs { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
+.tech, .net { text-align: left; padding: 6px 8px; background: var(--panel2); border: 2px solid #3d3122; border-radius: 4px; font-size: 17px; line-height: 17px; }
+.tech.avail { border-color: var(--border-light); }
+.tech.cur { border-color: #58a6ff; background: #1f2c3c; }
+.tech.done { border-color: #3f6f3f; }
+.tech.lock { opacity: 0.55; }
+.tn { display: flex; justify-content: space-between; gap: 8px; font-size: 20px; color: var(--accent); margin-bottom: 2px; }
+.tn small { color: var(--muted); font-size: 16px; white-space: nowrap; }
+.td { color: var(--text); margin-bottom: 4px; }
+.td i { color: var(--bad); font-style: normal; }
+.net { margin-bottom: 6px; }
+.net .jump { margin-top: 4px; padding: 4px 10px; font-size: 17px; background: var(--bg); border: 2px solid var(--border); border-radius: 3px; }
 .filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 4px; margin: 4px 0; }
 .fbtn { display: flex; align-items: center; gap: 4px; padding: 4px; font-size: 16px; background: var(--panel2); border: 2px solid #3d3122; border-radius: 3px; opacity: 0.45; min-height: 36px; }
 .fbtn.on { opacity: 1; border-color: var(--good); }
@@ -143,8 +160,10 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
   background: var(--panel2); border: 2px solid #3d3122; border-radius: 4px; line-height: 15px;
 }
 .tool img { width: 36px; height: 36px; margin-bottom: 2px; }
-.tool .tname { font-size: 16px; text-align: center; }
+.tool .tname { font-size: 16px; text-align: center; overflow-wrap: anywhere; }
 .tool .tcost { font-size: 13px; color: var(--muted); text-align: center; line-height: 12px; }
+.tool.locked { opacity: 0.5; }
+.tool.act { border-color: #4f6a8a; background: #233040; }
 .tool.active { background: #5d4720; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,211,90,0.25); }
 .tool:active { transform: translateY(1px); }
 #tabRow { display: flex; gap: 5px; justify-content: center; }
@@ -234,9 +253,10 @@ body.fast:not(.paused) #fastBadge { display: block; }
   .cbtn, #undoBtn { font-size: 17px; padding: 0 8px; }
   .ptable th .full { display: none; }
   .ptable th .short { display: inline; }
-  .ptable th { font-size: 14px; padding: 2px 0; }
+  .ptable th { font-size: 13px; padding: 2px 0; }
   .ptable td { padding: 3px 1px; }
-  .prio { width: 38px; height: 36px; font-size: 20px; }
+  .prio { width: 32px; height: 34px; font-size: 19px; }
+  .ptable td small { font-size: 12px; }
   .pname .portrait { display: none; }
   .pname { max-width: 74px; overflow: hidden; text-overflow: ellipsis; }
   .mbox { padding: 8px 8px; }

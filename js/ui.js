@@ -7,6 +7,8 @@ const UI = {
   TABS: [
     { id: 'orders', label: 'Příkazy', icon: 'chop', tools: ['select', 'chop', 'mine', 'harvest', 'decon', 'cancel'] },
     { id: 'build', label: 'Stavba', icon: 'wall_wood', tools: ['wall_wood', 'wall_stone', 'door', 'floor_wood', 'floor_stone', 'bed', 'campfire', 'table', 'chair', 'chest', 'lamp'] },
+    { id: 'prod', label: 'Výroba', icon: 'belt', tools: ['saw', 'furnace', 'research', 'belt', 'drill', 'autosaw', 'autofurnace', 'pole', 'waterwheel', 'windmill', 'boiler'],
+      actions: [{ icon: 'research_btn', label: 'Výzkum', run: () => UI.openResearch() }, { icon: 'power_btn', label: 'Energie', run: () => UI.openPower() }] },
     { id: 'zones', label: 'Zóny', icon: 'zone_farm', tools: ['zone_stock', 'zone_farm', 'zone_clear'] },
     { id: 'work', label: 'Práce', icon: 'priorities', action: () => UI.openPriorities() },
     { id: 'menu', label: 'Menu', icon: 'menu', action: () => UI.openMenu() },
@@ -38,8 +40,17 @@ const UI = {
     for (const k of ITEM_ORDER) {
       const chip = this.el('div', 'res', `${this.imgTag(k)}<span id="res-${k}">0</span>`);
       chip.title = ITEMS[k].name;
+      if (k === 'plank' || k === 'ore' || k === 'iron') chip.classList.add('hidden');
       res.appendChild(chip);
     }
+    const pw = this.el('div', 'res hidden', `${this.imgTag('power_btn')}<span id="res-power">0/0</span>`);
+    pw.title = 'Energie: výroba / spotřeba';
+    pw.onclick = () => this.openPower();
+    res.appendChild(pw);
+    const rs = this.el('div', 'res hidden', `${this.imgTag('research_btn')}<span id="res-research">0%</span>`);
+    rs.title = 'Probíhající výzkum';
+    rs.onclick = () => this.openResearch();
+    res.appendChild(rs);
     // rychlost
     const sp = this.$('speed');
     sp.innerHTML = '';
@@ -55,6 +66,7 @@ const UI = {
     this.setTab('orders');
     this.updateSpeed();
     this.$('hintClose').onclick = () => this.setTool('select');
+    this.$('rotBtn').onclick = () => Game.rotate();
     this.$('confirmOk').onclick = () => Game.confirmPending();
     this.$('confirmNo').onclick = () => Game.setPending(null);
     this.$('undoBtn').onclick = () => Tools.undo();
@@ -95,12 +107,22 @@ const UI = {
     const tab = this.TABS.find(t => t.id === id);
     const row = this.$('toolRow');
     row.innerHTML = '';
+    for (const a of tab.actions || []) {
+      const b = this.el('button', 'tool act', `${this.imgTag(a.icon)}<span class="tname">${a.label}</span>`);
+      b.onclick = a.run;
+      row.appendChild(b);
+    }
     for (const tool of tab.tools) {
       const d = Tools.defs[tool];
+      const locked = d.tech && !Research.has(d.tech);
       const cost = Tools.costText(tool);
-      const b = this.el('button', 'tool', `${this.imgTag(tool)}<span class="tname">${d.name}</span>` + (cost ? `<span class="tcost">${cost}</span>` : ''));
+      const b = this.el('button', 'tool' + (locked ? ' locked' : ''), `${this.imgTag(tool)}<span class="tname">${d.name}</span>` +
+        (locked ? `<span class="tcost">🔒 ${TECHS[d.tech].name}</span>` : cost ? `<span class="tcost">${cost}</span>` : ''));
       b.dataset.tool = tool;
-      b.onclick = () => this.setTool(Game.tool === tool && tool !== 'select' ? 'select' : tool);
+      b.onclick = () => {
+        if (d.tech && !Research.has(d.tech)) { this.toast(`${d.name}: nejdřív vyzkoumej „${TECHS[d.tech].name}“ (Výroba → Výzkum).`, 'warn'); return; }
+        this.setTool(Game.tool === tool && tool !== 'select' ? 'select' : tool);
+      };
       row.appendChild(b);
     }
     this.markTool();
@@ -114,7 +136,14 @@ const UI = {
       const d = Tools.defs[tool];
       this.$('hintText').innerHTML = `<b>${d.name}</b> – ${d.hint || ''}` + (d.build ? ` <i>Cena: ${Tools.costText(tool)}</i>` : '');
     }
+    this.updateRotate();
     this.updateConfirm();
+  },
+  /** Tlačítko otočení stavby v nápovědě nástroje. */
+  updateRotate() {
+    const d = Tools.defs[Game.tool], b = this.$('rotBtn');
+    b.classList.toggle('hidden', !(d && d.rot));
+    b.textContent = '⟳ ' + ['→', '↓', '←', '↑'][Game.buildDir];
   },
 
   /** Lišta s potvrzením výběru (dotyk): náhled, počet políček, cena, Potvrdit / Zrušit. */
@@ -124,7 +153,7 @@ const UI = {
     this.$('toolHint').classList.toggle('hidden', !!p || Game.tool === 'select');
     if (!p) return;
     const d = Tools.defs[p.tool];
-    const n = Tools.countValid(p.tool, Tools.tilesFor(p.tool, p.x0, p.y0, p.x1, p.y1));
+    const n = Tools.countValid(p.tool, Tools.tilesFor(p.tool, p.x0, p.y0, p.x1, p.y1), p.dir);
     let t = `<b>${d.name}</b> `;
     if (n === 0) t += '– tady není co provést.';
     else {
@@ -234,7 +263,8 @@ const UI = {
   },
   tileInfo(p, x, y) {
     // panel s filtrem se nepřekresluje při každé aktualizaci (klepnutí by se ztrácela)
-    const key = 't' + x + ',' + y + ':' + World.itemVer + ':' + (TimeSys.minutes / 30 | 0);
+    const mach = World.struct[World.idx(x, y)] && BUILD[World.struct[World.idx(x, y)].type].machine;
+    const key = 't' + x + ',' + y + ':' + World.itemVer + ':' + (mach ? Game.tickCount / 20 | 0 : TimeSys.minutes / 30 | 0);
     if (p.dataset.kind === key) return;
     p.dataset.kind = key;
     const i = World.idx(x, y);
@@ -250,7 +280,30 @@ const UI = {
       if (o.des) t += ' – ' + { chop: 'ke kácení', mine: 'k těžbě', harvest: 'ke sběru' }[o.des];
       rows.push(['Objekt', t]);
     }
-    if (World.struct[i]) rows.push(['Stavba', BUILD[World.struct[i].type].name + (World.struct[i].decon ? ' (k bourání)' : '')]);
+    const st = World.struct[i];
+    if (st) rows.push(['Stavba', BUILD[st.type].name + (st.decon ? ' (k bourání)' : '')]);
+    let machineHtml = '';
+    if (st && BUILD[st.type].machine) {
+      const m = BUILD[st.type].machine;
+      const list = (o) => Object.keys(o || {}).filter(k => o[k] >= 1).map(k => `${ITEMS[k].name} ${Math.floor(o[k])}`).join(', ') || '–';
+      rows.push(['Stav', Machines.status(st) || '–']);
+      if (m.recipe) {
+        rows.push(['Recept', Object.keys(m.recipe.in).map(k => `${m.recipe.in[k]} ${ITEMS[k].name.toLowerCase()}`).join(' + ') + ' → ' + Object.keys(m.recipe.out).map(k => `${m.recipe.out[k]} ${ITEMS[k].name.toLowerCase()}`).join(', ')]);
+        rows.push(['Zásobník', list(st.inv)]);
+      }
+      if (m.fuel) rows.push(['Palivo', list(st.inv) + (st.burn > 0 ? ` (hoří ještě ${Math.ceil(st.burn)} min)` : '')]);
+      if (m.recipe || m.drill) rows.push(['Výstup', list(st.out)]);
+      if (m.drill && World.obj[st.i]) rows.push(['Ložisko', `zbývá ${World.obj[st.i].amount} ks rudy`]);
+      const net = Power.netOf.get(st.i);
+      if (m.power) rows.push(['Energie', net ? `odběr ${m.power} ⚡, síť ${net.supply}/${net.demand} ⚡` : `potřebuje ${m.power} ⚡ – není v dosahu zdroje ani sloupu`]);
+      else if (m.gen || m.pole) rows.push(['Síť', net ? `výroba ${net.supply} ⚡, spotřeba ${net.demand} ⚡, strojů ${net.users.length}` : '–']);
+      if (m.manual && m.recipe) {
+        const outType = Object.keys(m.recipe.out)[0];
+        machineHtml = `<div class="psec">Vyrábět, dokud je ve skladu méně než</div>
+          <div class="target"><button data-act="t-10">−10</button><b>${st.target} × ${ITEMS[outType].name.toLowerCase()}</b><button data-act="t10">+10</button></div>
+          <div class="mnote">Teď máš ${World.counts[outType]}. Kolonisté s prací Řemeslo sem sami nosí suroviny.</div>`;
+      }
+    }
     if (World.floor[i]) rows.push(['Podlaha', BUILD[World.floor[i].type].name]);
     const bp = World.bp[i];
     if (bp) {
@@ -280,9 +333,20 @@ const UI = {
         `</div><div class="pbtns"><button id="fAll">Vše</button><button id="fNone">Nic</button></div>
         <div class="mnote">${World.isChest(i) ? 'Platí pro tuto truhlu.' : 'Platí pro celý souvislý sklad.'} Co sem nepatří, kolonisté odnesou jinam.</div>`;
     }
-    p.innerHTML = `<div class="phead"><div><div class="ptitle">${World.isChest(i) ? 'Truhla' : World.zone[i] === 1 ? 'Sklad' : 'Políčko'} ${x}, ${y}</div></div><button class="x" id="infoClose">✕</button></div>
-      <table class="ttab">${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>${filterHtml}`;
+    p.innerHTML = `<div class="phead"><div><div class="ptitle">${World.isChest(i) ? 'Truhla' : st && BUILD[st.type].machine ? BUILD[st.type].name : World.zone[i] === 1 ? 'Sklad' : 'Políčko'} ${x}, ${y}</div></div><button class="x" id="infoClose">✕</button></div>
+      <table class="ttab">${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>${machineHtml}${filterHtml}`;
     this.$('infoClose').onclick = () => Game.select(null);
+    // reaguje už na stisk – panel se průběžně překresluje a klepnutí by se mohlo ztratit
+    p.onpointerdown = (e) => {
+      const act = e.target.closest && e.target.closest('[data-act]');
+      if (!act) return;
+      const cur = World.struct[i];
+      if (cur && cur.target !== undefined) {
+        cur.target = U.clamp(cur.target + (act.dataset.act === 't10' ? 10 : -10), 0, 500);
+        p.dataset.kind = '';
+        this.tileInfo(p, x, y);
+      }
+    };
     if (filterHtml) {
       const region = World.stockRegion(i);
       const cur = () => (World.filter[i] & FILTER_CUSTOM) ? World.filter[i] : (FILTER_CUSTOM | (FILTER_CUSTOM - 1));
@@ -397,6 +461,15 @@ const UI = {
         <li><b>Stavba → Postel</b> pro každého kolonistu, kolem postav <b>zdi</b> a <b>dveře</b>.</li>
         <li><b>Příkazy → Těžit</b> skálu (kámen) a železnou rudu (oranžové žilky) na lampy.</li>
       </ol>
+      <h4>Automatizace</h4>
+      <ul>
+        <li><b>Dílny</b> (Výroba): pila řeže dřevo na prkna, pec taví rudu na železné pláty. Obsluhují je kolonisté s prací Řemeslo.</li>
+        <li><b>Ložiska rudy</b> mají zásobu ${Config.ORE_AMOUNT} kusů – těžbou nezmizí hned.</li>
+        <li><b>Výzkum</b>: postav výzkumný stůl a ve Výroba → Výzkum vyber technologii. Dokončení stromu je cíl hry.</li>
+        <li><b>Stroje</b>: vrták, automatická pila a pec s podavačem berou suroviny ze sousedních políček nebo z pásu a výrobky kladou ve směru šipky. Směr otočíš tlačítkem ⟳ v nápovědě nástroje.</li>
+        <li><b>Pásy</b>: táhni prstem ve směru, kterým mají vozit. Zatáčka = další pás jiným směrem.</li>
+        <li><b>Energie</b>: vodní kolo (na mělké vodě), větrník a kotel na dřevo. Stroje musí být v dosahu zdroje nebo sloupu; přehled je ve Výroba → Energie.</li>
+      </ul>
       <h4>Přežití</h4>
       <ul>
         <li><b>Zdraví:</b> dlouhé hladovění a vyčerpání ubírají zdraví a kolonista může zemřít. Když zemřou všichni, hra končí.</li>
@@ -413,6 +486,70 @@ const UI = {
     this.$('mClose').onclick = close;
     this.$('mBack').onclick = close;
     m.onclick = (e) => { if (e.target === m) close(); };
+  },
+
+  // ---------- Výzkum ----------
+  openResearch() {
+    const m = this.$('modal');
+    const render = () => {
+      const hasTable = World.structBy.research && World.structBy.research.size;
+      let h = `<div class="mbox wide"><div class="mhead"><b>Výzkum</b><button class="x" id="mClose">✕</button></div>
+        <p class="mnote">${hasTable ? 'Klepni na technologii, kterou mají kolonisté zkoumat (práce Výzkum u výzkumného stolu).' : '<b class="p1">Nejdřív postav Výzkumný stůl (Výroba).</b>'} Dokončení celého stromu je cílem hry.</p><div class="techs">`;
+      for (const id in TECHS) {
+        const t = TECHS[id];
+        const done = Research.done.has(id), avail = Research.available(id), cur = Research.current === id;
+        const pr = Research.progress(id);
+        h += `<button class="tech ${done ? 'done' : avail ? 'avail' : 'lock'} ${cur ? 'cur' : ''}" data-id="${id}">
+          <div class="tn">${done ? '✔ ' : cur ? '▶ ' : avail ? '' : '🔒 '}${t.name}<small>${done ? 'hotovo' : Math.floor(pr * t.cost) + ' / ' + t.cost}</small></div>
+          <div class="td">${t.desc}${!done && !avail ? ' <i>Vyžaduje: ' + t.req.filter(r => !Research.done.has(r)).map(r => TECHS[r].name).join(', ') + '</i>' : ''}</div>
+          <div class="bar"><i style="width:${pr * 100}%;background:${done ? '#6fd36f' : '#58a6ff'}"></i></div></button>`;
+      }
+      h += '</div></div>';
+      m.innerHTML = h;
+      m.classList.remove('hidden');
+      this.$('mClose').onclick = () => m.classList.add('hidden');
+      m.querySelectorAll('.tech.avail').forEach(b => b.onclick = () => { Research.setCurrent(b.dataset.id); render(); });
+    };
+    m.onclick = (e) => { if (e.target === m) m.classList.add('hidden'); };
+    render();
+  },
+
+  // ---------- Přehled energie ----------
+  openPower() {
+    const m = this.$('modal');
+    if (Power.dirty) Power.rebuild();
+    let h = `<div class="mbox wide"><div class="mhead"><b>Energie</b><button class="x" id="mClose">✕</button></div>
+      <p class="mnote">Celkem výroba <b class="on">${Power.supply} ⚡</b>, spotřeba <b class="${Power.demand > Power.supply ? 'p1' : 'on'}">${Power.demand} ⚡</b>. Zdroje a sloupy se propojí do ${Config.POWER_LINK} políček, stroj musí být do ${Config.POWER_REACH} políček od zdroje nebo sloupu. Při nedostatku běží stroje pomaleji, bez energie stojí.</p>`;
+    if (!Power.nets.length) h += '<p>Zatím nemáš žádný zdroj energie. Vyzkoumej Vodní energii a postav vodní kolo na mělké vodě.</p>';
+    Power.nets.forEach((net, k) => {
+      const count = (arr) => { const c = {}; for (const s of arr) c[BUILD[s.type].name] = (c[BUILD[s.type].name] || 0) + 1; return Object.keys(c).map(n => `${c[n]}× ${n}`).join(', ') || '–'; };
+      const g = net.gens[0] || net.poles[0];
+      h += `<div class="net"><div class="tn">Síť ${k + 1}<small>${net.supply} / ${net.demand} ⚡ (${Math.round(net.factor * 100)} %)</small></div>
+        <div class="bar"><i style="width:${Math.min(100, net.demand ? net.supply / net.demand * 100 : 100)}%;background:${net.factor < 1 ? '#e5534b' : '#6fd36f'}"></i></div>
+        <div class="td">Zdroje: ${net.gens.map(s => `${BUILD[s.type].name} ${Power.output(s)} ⚡`).join(', ') || '–'}<br>Stroje: ${count(net.users)}${net.poles.length ? '<br>Sloupů: ' + net.poles.length : ''}</div>
+        <button class="jump" data-x="${g.i % World.w}" data-y="${(g.i / World.w) | 0}">Ukázat na mapě</button></div>`;
+    });
+    h += '</div>';
+    m.innerHTML = h;
+    m.classList.remove('hidden');
+    this.$('mClose').onclick = () => m.classList.add('hidden');
+    m.querySelectorAll('.jump').forEach(b => b.onclick = () => { Camera.follow = null; Camera.centerTile(+b.dataset.x, +b.dataset.y); m.classList.add('hidden'); });
+    m.onclick = (e) => { if (e.target === m) m.classList.add('hidden'); };
+  },
+
+  /** Vítězství – dokončený strom technologií. Hrát se dá dál. */
+  victory() {
+    const m = this.$('modal'), st = Game.stats;
+    m.innerHTML = `<div class="mbox help"><div class="mhead"><b>Kolonie je soběstačná!</b></div>
+      <div class="hbody"><p>Dokončil/a jsi celý výzkum ${TimeSys.day}. dne. Stroje teď pracují za kolonisty – cíl hry je splněn.</p>
+      <table class="ttab">
+        <tr><td>Kolonistů</td><td>${Game.colonists.length}</td></tr>
+        <tr><td>Postavené stavby</td><td>${st.built}</td></tr>
+        <tr><td>Výrobků ze strojů</td><td>${st.machined}</td></tr>
+        <tr><td>Výrobků z dílen</td><td>${st.crafted}</td></tr>
+      </table></div><div class="menu"><button id="mBack">Hrát dál</button></div></div>`;
+    m.classList.remove('hidden');
+    this.$('mBack').onclick = () => m.classList.add('hidden');
   },
 
   /** Konec hry – všichni kolonisté zemřeli. */
@@ -463,7 +600,19 @@ const UI = {
     sl.textContent = `${TimeSys.seasonName} ${Math.round(temp)}°C`;
     sl.className = 's' + TimeSys.season;
     const counts = World.countItems();
-    for (const k of ITEM_ORDER) this.$('res-' + k).textContent = counts[k];
+    for (const k of ITEM_ORDER) {
+      const e = this.$('res-' + k);
+      e.textContent = counts[k];
+      // pokročilé suroviny se ukážou, až je kolonie poprvé získá
+      if (counts[k] > 0) e.parentNode.classList.remove('hidden');
+    }
+    const pw = this.$('res-power');
+    pw.parentNode.classList.toggle('hidden', !Power.nets.length);
+    pw.textContent = `${Power.supply}/${Power.demand}`;
+    pw.parentNode.classList.toggle('low', Power.demand > Power.supply);
+    const rs = this.$('res-research');
+    rs.parentNode.classList.toggle('hidden', !Research.current);
+    if (Research.current) rs.textContent = Math.floor(Research.progress(Research.current) * 100) + '%';
     this.updateColonistBar();
     if (Game.selected) this.updateInfo(false);
   },

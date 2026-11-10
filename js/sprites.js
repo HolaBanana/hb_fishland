@@ -272,6 +272,20 @@ const Sprites = (() => {
       set(5, 11, [120, 86, 50]); set(9, 8, [120, 86, 50]); set(12, 12, [120, 86, 50]);
       set(8, 3, [96, 160, 64]); set(9, 2, [120, 184, 80]); set(7, 2, [80, 140, 54]);
     }));
+    S.items.plank = outline(paint(16, 16, (set, get, rect) => {
+      const board = (x0, y0, len, c) => { rect(x0, y0, len, 2, c); rect(x0, y0, len, 1, U.shade(c, 1.18)); set(x0, y0 + 1, U.shade(c, 0.7)); set(x0 + len - 1, y0 + 1, U.shade(c, 0.7)); };
+      board(2, 11, 12, [196, 150, 96]); board(3, 8, 12, [206, 162, 106]); board(2, 5, 11, [186, 140, 88]);
+    }));
+    S.items.ore = outline(paint(16, 16, (set) => {
+      const chunks = [[5, 10, 3.2], [11, 10, 3], [8, 6, 2.8]];
+      for (const [cx, cy, r] of chunks) for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) {
+        if (Math.hypot(x, y * 1.2) > r) continue;
+        const lv = 0.55 - x / 8 - y / 7;
+        let c = lv > 0.8 ? [150, 144, 136] : lv > 0.45 ? [112, 106, 100] : [80, 76, 72];
+        if (H(cx + x, cy + y, 31) > 0.62) c = lv > 0.5 ? [226, 150, 86] : [176, 98, 52];
+        set(cx + x, cy + y, c);
+      }
+    }));
     S.items.meal = outline(paint(16, 16, (set) => {
       for (let y = 7; y < 14; y++) for (let x = 2; x < 14; x++) {
         const dx = (x - 7.5) / 6, dy = (y - 8) / 6;
@@ -378,6 +392,96 @@ const Sprites = (() => {
       rect(7, 7, 2, 3, [232, 200, 96]); set(7, 9, [150, 120, 50]);
       rect(2, 13, 12, 1, [96, 62, 34]);
     }));
+    // ----- dílny, stroje, energie -----
+    const metal = [120, 126, 138], metalL = [176, 184, 196], metalD = [72, 78, 90];
+    const wood = [150, 104, 60], woodL = [186, 138, 86], woodD = [100, 66, 38];
+    const stoneC = [140, 136, 130], stoneL = [176, 172, 164], stoneD = [92, 88, 84];
+    S.build.saw = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 7, 14, 5, wood); rect(1, 7, 14, 1, woodL); rect(1, 11, 14, 1, woodD);
+      rect(2, 12, 2, 4, woodD); rect(12, 12, 2, 4, woodD);
+      for (let x = 4; x < 12; x++) { set(x, 3 + (x & 1), metalL); set(x, 5, metal); set(x, 6, metalD); }
+      rect(3, 3, 1, 4, woodD); rect(12, 3, 1, 4, woodD);
+      rect(5, 8, 7, 2, [206, 162, 106]);
+    }));
+    S.build.furnace = outline(paint(16, 16, (set, get, rect) => {
+      rect(2, 4, 12, 12, stoneC);
+      for (let y = 4; y < 16; y += 3) rect(2, y, 12, 1, stoneD);
+      for (let y = 4; y < 16; y++) set(2 + ((y * 5) % 11), y, stoneL);
+      rect(5, 9, 6, 5, [40, 30, 28]); rect(6, 11, 4, 3, [240, 130, 40]); rect(7, 12, 2, 2, [255, 220, 110]);
+      rect(6, 0, 4, 4, stoneD); rect(6, 0, 4, 1, stoneL);
+    }));
+    S.build.research = outline(paint(32, 16, (set, get, rect) => {
+      rect(1, 6, 30, 6, wood); rect(1, 6, 30, 1, woodL); rect(1, 11, 30, 1, woodD);
+      rect(2, 12, 2, 4, woodD); rect(28, 12, 2, 4, woodD); rect(14, 12, 2, 4, woodD);
+      rect(4, 2, 2, 4, [150, 200, 230]); rect(4, 4, 2, 2, [80, 170, 110]);            // baňka
+      rect(8, 3, 2, 3, [220, 220, 230]); rect(8, 5, 2, 1, [200, 90, 90]);
+      rect(13, 3, 7, 3, [236, 228, 204]); rect(14, 4, 5, 1, [120, 110, 96]);            // papíry
+      rect(23, 1, 1, 5, metalD); rect(21, 1, 5, 1, metal); rect(24, 2, 3, 2, [250, 214, 110]); // lampička
+    }));
+    S.build.belt = paint(16, 16, (set, get, rect) => {
+      rect(0, 2, 16, 12, [58, 60, 68]);
+      rect(0, 1, 16, 1, metalL); rect(0, 14, 16, 1, metalD);
+      rect(0, 2, 16, 1, [40, 42, 48]); rect(0, 13, 16, 1, [40, 42, 48]);
+    });
+    // šipky pásu (3 fáze animace), směr východ
+    S.beltArrow = [0, 1, 2].map(f => paint(16, 16, (set) => {
+      for (let k = 0; k < 3; k++) {
+        const x0 = (k * 6 + f * 2) % 18 - 2;
+        for (let d = 0; d < 4; d++) { set(x0 + d, 4 + d, [226, 190, 80]); set(x0 + d, 11 - d, [226, 190, 80]); }
+      }
+    }));
+    S.build.drill = outline(paint(16, 16, (set, get, rect) => {
+      rect(2, 2, 12, 9, metal); rect(2, 2, 12, 1, metalL); rect(2, 10, 12, 1, metalD);
+      rect(4, 4, 8, 4, [58, 60, 68]); rect(5, 5, 2, 2, [250, 214, 110]);
+      rect(1, 11, 2, 5, metalD); rect(13, 11, 2, 5, metalD);
+      for (let y = 11; y < 16; y++) { const w = Math.max(1, 5 - (y - 11)); rect(8 - (w >> 1), y, w, 1, y & 1 ? metalL : metalD); }
+    }));
+    S.build.autosaw = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 6, 14, 9, metal); rect(1, 6, 14, 1, metalL); rect(1, 14, 14, 1, metalD);
+      rect(3, 9, 10, 3, wood); rect(3, 9, 10, 1, woodL);
+      for (let a = 0; a < 10; a++) { const an = a / 10 * Math.PI * 2; set(8 + Math.cos(an) * 4.5, 5 + Math.sin(an) * 4.5, metalL); }
+      for (let y = 2; y < 9; y++) for (let x = 5; x < 12; x++) if (Math.hypot(x - 8, y - 5) < 3.6) set(x, y, (x + y) & 1 ? [200, 206, 216] : [150, 156, 168]);
+      set(8, 5, metalD);
+    }));
+    S.build.autofurnace = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 4, 14, 12, stoneC);
+      for (let y = 4; y < 16; y += 3) rect(1, y, 14, 1, stoneD);
+      rect(1, 4, 14, 1, metalL); rect(1, 15, 14, 1, metalD); rect(1, 4, 1, 12, metal); rect(14, 4, 1, 12, metal);
+      rect(4, 8, 8, 6, [40, 30, 28]); rect(5, 10, 6, 4, [240, 130, 40]); rect(6, 11, 4, 3, [255, 220, 110]);
+      rect(5, 0, 3, 4, metalD); rect(9, 1, 3, 3, metalD);
+    }));
+    S.build.pole = outline(paint(16, 16, (set, get, rect) => {
+      rect(7, 2, 2, 14, wood); rect(7, 2, 1, 14, woodL);
+      rect(3, 3, 10, 2, woodD); rect(3, 3, 10, 1, wood);
+      set(3, 2, metalL); set(12, 2, metalL); set(7, 1, metalL); set(8, 1, metalL);
+      rect(6, 14, 4, 2, stoneD);
+    }));
+    S.build.waterwheel = outline(paint(16, 16, (set, get, rect) => {
+      rect(0, 12, 16, 4, woodD); rect(0, 12, 16, 1, wood);
+      rect(7, 2, 2, 11, woodD);
+      rect(2, 13, 3, 3, stoneC); rect(11, 13, 3, 3, stoneC);
+    }));
+    S.build.windmill = outline(paint(32, 32, (set, get, rect) => {
+      for (let y = 12; y < 32; y++) { const w = 4 + Math.floor((y - 12) / 4); rect(16 - w, y, w * 2, 1, (y % 5 === 0) ? stoneD : stoneC); set(16 - w, y, stoneL); }
+      rect(13, 24, 6, 8, woodD); rect(14, 25, 4, 7, wood);
+      rect(11, 8, 10, 5, wood); rect(11, 8, 10, 1, woodL); rect(11, 12, 10, 1, woodD);
+    }));
+    S.build.boiler = outline(paint(32, 32, (set, get, rect) => {
+      rect(3, 12, 26, 18, stoneC);
+      for (let y = 12; y < 30; y += 4) rect(3, y, 26, 1, stoneD);
+      for (let y = 6; y < 24; y++) for (let x = 6; x < 26; x++) {
+        const dx = (x - 15.5) / 10, dy = (y - 15) / 9;
+        if (dx * dx + dy * dy <= 1) set(x, y, dx + dy < -0.5 ? metalL : dx + dy > 0.6 ? metalD : metal);
+      }
+      rect(6, 14, 20, 1, metalD); rect(6, 18, 20, 1, metalD);
+      rect(11, 22, 10, 8, [40, 30, 28]); rect(12, 25, 8, 5, [240, 130, 40]); rect(14, 27, 4, 3, [255, 220, 110]);
+      rect(21, 0, 5, 10, metalD); rect(21, 0, 5, 1, metalL); rect(22, 1, 1, 9, metal);
+    }));
+    // šipka směru výstupu (východ)
+    S.arrow = outline(paint(9, 9, (set) => {
+      for (let x = 1; x < 6; x++) set(x, 4, [255, 220, 90]);
+      for (let d = 0; d < 3; d++) { set(7 - d, 4 - d, [255, 220, 90]); set(7 - d, 4 + d, [255, 220, 90]); }
+    }), [40, 30, 10]);
     S.build.campfire = paint(16, 16, (set) => {
       for (let a = 0; a < 12; a++) {
         const ang = a / 12 * Math.PI * 2;
@@ -567,6 +671,8 @@ const Sprites = (() => {
     }));
     for (const k in BUILD) I[k] = S.build[k];
     I.wall_wood = S.build.wall_wood; I.wall_stone = S.build.wall_stone;
+    I.belt = canvas(16, 16);
+    { const g = I.belt.getContext('2d'); g.drawImage(S.build.belt, 0, 0); g.drawImage(S.beltArrow[0], 0, 0); }
     I.zone_stock = outline(paint(16, 16, (set, get, rect) => {
       rect(2, 4, 12, 10, [160, 112, 60]);
       rect(2, 4, 12, 1, [200, 150, 90]);
@@ -584,6 +690,15 @@ const Sprites = (() => {
     }));
     I.priorities = outline(paint(16, 16, (set, get, rect) => {
       for (let r = 0; r < 4; r++) { rect(2, 2 + r * 3, 3, 2, [230, 200, 90]); rect(6, 2 + r * 3, 8, 2, [220, 220, 220]); }
+    }));
+    I.research_btn = outline(paint(16, 16, (set, get, rect) => {
+      rect(6, 1, 4, 5, [200, 220, 236]); rect(5, 1, 6, 1, [150, 170, 190]);
+      for (let y = 6; y < 14; y++) { const w = 2 + (y - 6) * 0.75; rect(8 - w, y, w * 2, 1, y > 9 ? [90, 190, 120] : [200, 220, 236]); }
+      set(7, 11, [200, 240, 210]); set(9, 12, [200, 240, 210]);
+    }));
+    I.power_btn = outline(paint(16, 16, (set) => {
+      const pts = [[9, 1], [8, 2], [7, 3], [6, 4], [5, 5], [4, 6], [5, 7], [6, 7], [7, 7], [8, 7], [9, 7], [8, 8], [7, 9], [6, 10], [5, 11], [4, 12], [3, 13]];
+      for (const [x, y] of pts) { set(x, y, [255, 220, 80]); set(x + 1, y, [255, 240, 150]); set(x + 2, y, [230, 180, 50]); }
     }));
     I.menu = outline(paint(16, 16, (set, get, rect) => {
       rect(2, 3, 12, 2, [230, 230, 230]); rect(2, 7, 12, 2, [230, 230, 230]); rect(2, 11, 12, 2, [230, 230, 230]);

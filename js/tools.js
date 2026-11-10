@@ -15,9 +15,11 @@ const Tools = (() => {
     return () => { const o = World.obj[i]; if (o && o.des === des) World.designate(i, prev); };
   };
   const setDecon = (i, on) => {
-    if (World.struct[i]) World.struct[i].decon = on; else if (World.floor[i]) World.floor[i].decon = on;
+    const s = World.struct[i];
+    if (s) { s.decon = on; i = s.i; } else if (World.floor[i]) World.floor[i].decon = on;
     if (on) World.deconSet.add(i); else World.deconSet.delete(i);
   };
+  const isDecon = (i) => !!((World.struct[i] && World.struct[i].decon) || (!World.struct[i] && World.floor[i] && World.floor[i].decon));
   const zoneTool = (z) => (i) => {
     const prev = World.zone[i];
     World.zone[i] = z;
@@ -51,20 +53,21 @@ const Tools = (() => {
     decon: {
       name: 'Zbourat', mode: 'rect', hint: 'Táhni přes stavby nebo podlahy, které chceš zbourat (vrátí se část materiálu).',
       valid: i => !!((World.struct[i] && !World.struct[i].decon) || (!World.struct[i] && World.floor[i] && !World.floor[i].decon)),
-      apply: i => { setDecon(i, true); return () => { if (World.deconSet.has(i)) setDecon(i, false); }; },
+      apply: i => { setDecon(i, true); return () => { if (isDecon(i)) setDecon(i, false); }; },
     },
     cancel: {
       name: 'Zrušit', mode: 'rect', hint: 'Táhni pro zrušení označení, plánů staveb a bourání.',
-      valid: i => !!(World.bp[i] || (World.obj[i] && World.obj[i].des) || World.deconSet.has(i)),
+      valid: i => !!(World.bp[i] || (World.obj[i] && World.obj[i].des) || isDecon(i)),
       apply: i => {
-        const bpType = World.bp[i] ? World.bp[i].type : null;
+        const bp = World.bp[i];
+        const bpType = bp ? bp.type : null, bpAt = bp ? bp.i : i, bpDir = bp ? bp.dir : 0;
         const des = World.obj[i] ? World.obj[i].des : null;
-        const decon = World.deconSet.has(i);
+        const decon = isDecon(i);
         if (bpType) World.cancelBlueprint(i);
         if (des) World.designate(i, null);
         if (decon) setDecon(i, false);
         return () => {
-          if (bpType && defs[bpType].valid(i)) World.placeBlueprint(i, bpType);
+          if (bpType && defs[bpType].valid(bpAt, bpDir)) World.placeBlueprint(bpAt, bpType, bpDir);
           if (des && World.obj[i] && !World.obj[i].des) World.designate(i, des);
           if (decon && (World.struct[i] || World.floor[i])) setDecon(i, true);
         };
@@ -94,17 +97,33 @@ const Tools = (() => {
   // stavební nástroje z definic BUILD
   for (const k in BUILD) {
     const b = BUILD[k];
+    const turns = !!(b.rot || b.size);
+    const isBeltTool = !!(b.machine && b.machine.belt);
+    const tileOk = (t) => {
+      if (World.bp[t] || World.crops[t]) return false;
+      if (b.onWater ? World.terrain[t] !== T.SHALLOW : !notBlockedTerrain(t)) return false;
+      const o = World.obj[t];
+      if (b.onOre ? !(o && o.type === 'ore') : !!o) return false;
+      return b.layer === 'floor' ? !World.floor[t] : !World.struct[t];
+    };
     defs[k] = {
-      name: b.name, mode: b.mode, hint: b.hint, build: k,
-      valid: i => {
-        if (!notBlockedTerrain(i) || World.bp[i] || World.crops[i]) return false;
-        const o = World.obj[i];
-        if (o) return false;
-        if (b.layer === 'floor') return !World.floor[i];
-        return !World.struct[i];
+      name: b.name, mode: b.mode, hint: b.hint, build: k, rot: !!b.rot, tech: b.tech,
+      valid: (i, dir = Game.buildDir) => {
+        if (!Research.unlocked(k)) return false;
+        // přetažením přes hotový pás se jen změní jeho směr
+        if (isBeltTool && World.isBelt(i)) return World.struct[i].dir !== dir && !World.struct[i].decon;
+        const tiles = World.footprint(i, k, turns ? dir : 0);
+        if (!tiles) return false;
+        for (const t of tiles) if (!tileOk(t)) return false;
+        return true;
       },
-      apply: i => {
-        World.placeBlueprint(i, k);
+      apply: (i, dir = Game.buildDir) => {
+        if (isBeltTool && World.isBelt(i)) {
+          const s = World.struct[i], prev = s.dir;
+          s.dir = dir;
+          return () => { if (World.struct[i] === s) s.dir = prev; };
+        }
+        World.placeBlueprint(i, k, turns ? dir : 0);
         return () => { if (World.bp[i] && World.bp[i].type === k) World.cancelBlueprint(i); };
       },
     };
@@ -118,6 +137,17 @@ const Tools = (() => {
     const clampX = v => U.clamp(v, 0, World.w - 1), clampY = v => U.clamp(v, 0, World.h - 1);
     if (d.mode === 'single') {
       if (World.inb(x1, y1)) out.push(World.idx(x1, y1));
+      return out;
+    }
+    if (d.mode === 'line') {
+      // rovná čára po delší ose tahu, v pořadí tahu (pásy)
+      const horiz = Math.abs(x1 - x0) >= Math.abs(y1 - y0);
+      const len = horiz ? Math.abs(x1 - x0) : Math.abs(y1 - y0);
+      const sx = Math.sign(x1 - x0), sy = Math.sign(y1 - y0);
+      for (let k = 0; k <= len; k++) {
+        const x = horiz ? x0 + sx * k : x0, y = horiz ? y0 : y0 + sy * k;
+        if (World.inb(x, y)) out.push(World.idx(x, y));
+      }
       return out;
     }
     let ax = clampX(Math.min(x0, x1)), bx = clampX(Math.max(x0, x1));
@@ -136,10 +166,19 @@ const Tools = (() => {
   const undoStack = [];
   const UNDO_MAX = 30;
 
-  function countValid(tool, tiles) {
+  /** Směr stavby pro daný tah: čára (pás) míří ve směru tahu, jinak platí zvolené otočení. */
+  function dirFor(tool, x0, y0, x1, y1) {
+    const d = defs[tool];
+    if (d && d.mode === 'line' && (x0 !== x1 || y0 !== y1)) {
+      if (Math.abs(x1 - x0) >= Math.abs(y1 - y0)) return x1 > x0 ? 0 : 2;
+      return y1 > y0 ? 1 : 3;
+    }
+    return Game.buildDir;
+  }
+  function countValid(tool, tiles, dir) {
     const d = defs[tool];
     let n = 0;
-    if (d && d.valid) for (const i of tiles) if (d.valid(i)) n++;
+    if (d && d.valid) for (const i of tiles) if (d.valid(i, dir)) n++;
     return n;
   }
   /** Které suroviny chybí na `n` kusů stavby (názvy malými písmeny). */
@@ -151,11 +190,12 @@ const Tools = (() => {
     return lack;
   }
 
-  function apply(tool, tiles) {
+  function apply(tool, tiles, dir = Game.buildDir) {
     const d = defs[tool];
     if (!d || !d.apply) return 0;
+    if (d.tech && !Research.has(d.tech)) { UI.toast(`${d.name}: nejdřív vyzkoumej „${TECHS[d.tech].name}“.`, 'warn'); return 0; }
     const undos = [];
-    for (const i of tiles) if (d.valid(i)) undos.push(d.apply(i));
+    for (const i of tiles) if (d.valid(i, dir)) undos.push(d.apply(i, dir));
     const n = undos.length;
     if (d.after) d.after();
     if (n > 0) {
@@ -188,5 +228,5 @@ const Tools = (() => {
     return Object.keys(cost).map(m => `${cost[m] * n} ${ITEMS[m].name.toLowerCase()}`).join(', ');
   }
 
-  return { defs, tilesFor, apply, costText, countValid, lacking, undo, undoStack };
+  return { defs, tilesFor, apply, costText, countValid, lacking, undo, undoStack, dirFor };
 })();

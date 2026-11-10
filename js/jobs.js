@@ -27,7 +27,7 @@ const Jobs = (() => {
     for (const i of World.itemSet) {
       const it = World.items[i];
       if (!it || !types.includes(it.type)) continue;
-      if (Game.availItem(i) < minAvail) continue;
+      if (Game.availItem(i) < minAvail || World.isBelt(i)) continue;
       if ((c.unreach.get('i' + i) || 0) > TimeSys.minutes) continue;
       const d = Math.abs(ix(i) - c.tx) + Math.abs(iy(i) - c.ty);
       if (d < bd) { bd = d; best = i; }
@@ -148,6 +148,26 @@ const Jobs = (() => {
         const o = World.obj[i];
         if (o && o.berries) out.push({ type: 'pick', i, key: 'o' + i });
       }
+      return out;
+    },
+    craft() {
+      const out = [];
+      for (const i of World.machines) {
+        const s = World.struct[i], m = BUILD[s.type].machine;
+        if (!m.manual || !m.recipe || s.decon) continue;
+        const outType = Object.keys(m.recipe.out)[0];
+        if (World.counts[outType] >= s.target) continue;
+        let ok = true;
+        for (const k in m.recipe.in) if ((s.inv[k] || 0) < m.recipe.in[k] && !anyItem(k)) { ok = false; break; }
+        if (ok) out.push({ type: 'craft', i, key: 'o' + i });
+      }
+      return out;
+    },
+    research() {
+      const out = [];
+      const tables = World.structBy.research;
+      if (!tables || !tables.size || !Research.active()) return out;
+      for (const i of tables) if (!World.struct[i].decon) out.push({ type: 'research', i, key: 'o' + i });
       return out;
     },
     chop() {
@@ -331,6 +351,98 @@ const Jobs = (() => {
           return DONE;
         }
       }
+    },
+
+    /**
+     * Práce v dílně (pila, pec): 0 co chybí → 1 pro surovinu → 2 donést do
+     * zásobníku dílny → 3 dojít → 4 vyrábět, dokud jsou suroviny a není splněn cíl.
+     */
+    craft(c, j) {
+      const s = World.struct[j.i];
+      if (!s || s.decon || !BUILD[s.type].machine) return FAIL;
+      const r = BUILD[s.type].machine.recipe, x = ix(j.i), y = iy(j.i);
+      const outType = Object.keys(r.out)[0];
+      if (j.stage === 0) {
+        let miss = null;
+        for (const k in r.in) if ((s.inv[k] || 0) < r.in[k]) { miss = k; break; }
+        if (!miss) j.stage = 3;
+        else {
+          j.mat = miss;
+          if (c.carry && c.carry.type === miss) j.stage = 2;
+          else {
+            const src = nearestItem([miss], c);
+            if (src < 0) return FAIL;
+            const amt = Math.min(Machines.room(s, miss), Game.availItem(src), Config.CARRY);
+            Game.reserveItem(src, amt, c);
+            j.src = src; j.amt = amt; j.stage = 1;
+          }
+        }
+      }
+      if (j.stage === 1) {
+        c.activity = 'Nese suroviny do dílny (' + ITEMS[j.mat].name.toLowerCase() + ')';
+        const r2 = walk(c, j, ix(j.src), iy(j.src), 0, 'i' + j.src);
+        if (r2 === 'fail') return FAIL;
+        if (r2 === 'moving') return;
+        if (!c.pickup(j.src, j.amt, j.mat)) return FAIL;
+        j.stage = 2;
+      }
+      if (j.stage === 2) {
+        const r2 = walk(c, j, x, y, 2);
+        if (r2 === 'fail') return FAIL;
+        if (r2 === 'moving') return;
+        if (c.carry && c.carry.type === j.mat) {
+          const k = Math.min(c.carry.n, Machines.room(s, j.mat));
+          s.inv[j.mat] = (s.inv[j.mat] || 0) + k;
+          c.carry.n -= k;
+          if (c.carry.n <= 0) c.carry = null; else c.dropCarry();
+        }
+        j.stage = 0; j.walkKey = null;
+        return;
+      }
+      if (j.stage === 3) {
+        c.activity = 'Jde do dílny: ' + BUILD[s.type].name.toLowerCase();
+        const r2 = walk(c, j, x, y, 2);
+        if (r2 === 'fail') return FAIL;
+        if (r2 === 'moving') return;
+        j.stage = 4; j.made = 0;
+      }
+      if (j.stage === 4) {
+        if (!Machines.canCraft(s)) return j.made ? DONE : FAIL;
+        c.activity = 'Vyrábí: ' + ITEMS[outType].name.toLowerCase();
+        c.face(x, y);
+        j.progress += c.work('craft');
+        s.prog = j.progress / r.work;
+        s.used = Game.tickCount;
+        c.workFrac = s.prog;
+        if (BUILD[s.type].machine.pollute) Pollution.add(j.i, BUILD[s.type].machine.pollute);
+        if (j.progress >= r.work) {
+          const out = Machines.craft(s);
+          for (const k in out) World.dropItem(c.tx, c.ty, k, out[k]);
+          Game.stats.crafted++;
+          j.progress = 0;
+          if (++j.made >= 8 || World.counts[outType] >= s.target) return DONE;
+        }
+      }
+    },
+
+    /** Výzkum u výzkumného stolu. */
+    research(c, j) {
+      const s = World.struct[j.i];
+      if (!s || s.decon || !Research.current) return DONE;
+      const x = ix(j.i), y = iy(j.i);
+      if (j.stage === 0) {
+        c.activity = 'Jde bádat';
+        const r = walk(c, j, x, y, 2);
+        if (r === 'fail') return FAIL;
+        if (r === 'moving') return;
+        j.stage = 1;
+      }
+      c.activity = 'Zkoumá: ' + TECHS[Research.current].name.toLowerCase();
+      c.face(x, y);
+      s.used = Game.tickCount;
+      c.workFrac = Research.progress(Research.current);
+      Research.add(c.work('research') * Config.RESEARCH_RATE);
+      if (++j.progress > 500) return DONE;   // občas přerušit kvůli jídlu a spánku
     },
 
     decon(c, j) {
@@ -626,10 +738,12 @@ const Jobs = (() => {
       Game.stats.mined++;
       World.dropItem(x, y, 'stone', U.int(5, 7));
     } else if (o.type === 'ore') {
-      World.removeObj(i);
+      // ložisko: ubývá zásoba, políčko zmizí až po vyčerpání
+      const k = Math.min(Config.ORE_PER_MINE, o.amount);
+      o.amount -= k;
       Game.stats.mined++;
-      World.dropItem(x, y, 'iron', U.int(4, 6));
-      if (U.chance(0.5)) World.dropItem(x, y, 'stone', 2);
+      World.dropItem(c.tx, c.ty, 'ore', k);
+      if (o.amount <= 0) World.removeObj(i);
     } else if (o.type === 'bush') {
       o.berries = false;
       o.regrow = Config.BUSH_REGROW_HOURS; // označení zůstává → po dorůstání se sklidí znovu

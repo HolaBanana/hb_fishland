@@ -16,7 +16,8 @@ const Game = {
   autoFast: false,       // zrychlit čas, když všichni kolonisté spí
   fastNow: false,        // právě běží automatické zrychlení
   tool: 'select',
-  pending: null,         // výběr čekající na potvrzení {tool,x0,y0,x1,y1}
+  pending: null,         // výběr čekající na potvrzení {tool,x0,y0,x1,y1,dir}
+  buildDir: 0,           // otočení umisťované stavby (0 východ, 1 jih, 2 západ, 3 sever)
   selected: null,
   tickCount: 0,
   notified: new Map(),
@@ -34,8 +35,8 @@ const Game = {
     this.tickCount = 0; this.pending = null;
     this.over = false;
     this.alerts = [];
-    this.stats = { built: 0, chopped: 0, mined: 0, cooked: 0, harvested: 0, cropsEaten: 0, joined: 0, deaths: [] };
-    Fire.reset(); Animals.reset();
+    this.stats = { built: 0, chopped: 0, mined: 0, cooked: 0, harvested: 0, cropsEaten: 0, joined: 0, crafted: 0, machined: 0, deaths: [] };
+    Fire.reset(); Animals.reset(); Power.reset(); Research.reset();
     this.colonists = createColonists(World.start);
     this.nextId = this.colonists.length;
     Weather.reset();
@@ -190,7 +191,14 @@ const Game = {
     const p = this.pending;
     if (!p) return;
     this.pending = null;
-    Tools.apply(p.tool, Tools.tilesFor(p.tool, p.x0, p.y0, p.x1, p.y1));
+    Tools.apply(p.tool, Tools.tilesFor(p.tool, p.x0, p.y0, p.x1, p.y1), p.dir);
+    UI.updateConfirm();
+  },
+  /** Otočí umisťovanou stavbu o 90°. */
+  rotate() {
+    this.buildDir = (this.buildDir + 1) % 4;
+    if (this.pending) this.pending.dir = Tools.dirFor(this.pending.tool, this.pending.x0, this.pending.y0, this.pending.x1, this.pending.y1);
+    UI.updateRotate();
     UI.updateConfirm();
   },
   allSleeping() {
@@ -216,6 +224,8 @@ const Game = {
       World.update(hours);
       Fire.update(hours);
     }
+    if (this.tickCount % 10 === 0) Power.update(10);
+    Machines.tick();
     Animals.tick();
     for (const c of this.colonists.slice()) c.tick();
   },
@@ -224,7 +234,7 @@ const Game = {
     let last = performance.now();
     let uiT = 0;
     const loop = (now) => {
-      const dt = Math.min(0.1, (now - last) / 1000);
+      const dt = U.clamp((now - last) / 1000, 0, 0.1);
       last = now;
       this.acc += dt * Config.TPS * this.effectiveSpeed();
       let steps = 0;
