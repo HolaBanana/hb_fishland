@@ -260,6 +260,45 @@ body.fast:not(.paused) #fastBadge { display: block; }
   font-size: 32px; color: var(--accent);
 }
 
+/* ---------- Úkoly, minimapa, přehledy, nová hra ---------- */
+#quest { position: fixed; top: calc(52px + var(--safe-t)); left: 146px; width: 300px; padding: 5px 8px; z-index: 5; font-size: 17px; line-height: 17px; border-color: #58a6ff; }
+.qh { display: flex; gap: 6px; align-items: flex-start; justify-content: space-between; color: var(--accent); font-size: 19px; }
+.qh b { font-weight: normal; }
+.qh .x { width: 24px; height: 24px; font-size: 13px; }
+.qd i { color: var(--good); font-style: normal; }
+#minimap { position: fixed; right: 6px; bottom: calc(150px + var(--safe-b)); width: 150px; height: 150px; z-index: 5; image-rendering: pixelated; border: 2px solid var(--border); background: #000; box-shadow: 0 3px 0 rgba(0,0,0,0.45); touch-action: none; cursor: crosshair; }
+.seg { display: flex; gap: 3px; flex-wrap: wrap; }
+.seg button { flex: 1 1 auto; min-height: 36px; padding: 2px 8px; font-size: 18px; background: var(--panel2); border: 2px solid #3d3122; border-radius: 3px; }
+.seg button.on { background: #5d4720; border-color: var(--accent); color: #fff; }
+.otabs { margin-bottom: 8px; }
+.ovmap { width: min(100%, 440px); aspect-ratio: 1; display: block; margin: 0 auto; image-rendering: pixelated; border: 2px solid var(--border); cursor: crosshair; }
+.ovgraph { width: 100%; height: auto; display: block; border: 2px solid var(--border); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.legend .fbtn { flex: 0 0 auto; }
+.alerts { max-height: 60vh; overflow-y: auto; }
+.al { display: flex; gap: 8px; align-items: center; padding: 3px 6px; border-left: 4px solid #58a6ff; margin-bottom: 3px; background: var(--panel2); line-height: 17px; }
+.al.warn { border-left-color: var(--bad); } .al.good { border-left-color: var(--good); }
+.al small { color: var(--muted); white-space: nowrap; font-size: 15px; }
+.al span { flex: 1; }
+.al .jump { padding: 2px 8px; font-size: 16px; background: var(--bg); border: 2px solid var(--border); border-radius: 3px; }
+.ng { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; align-items: center; }
+.ng label { color: var(--muted); white-space: nowrap; }
+.seedrow { display: flex; gap: 4px; }
+.seedrow input { flex: 1; min-width: 0; height: 36px; background: #120e0a; color: var(--text); border: 2px solid var(--border); border-radius: 3px; font: inherit; padding: 0 8px; }
+.seedrow button, .mini-btn { padding: 2px 10px; min-height: 34px; font-size: 17px; background: var(--panel2); border: 2px solid var(--border); border-radius: 3px; }
+.psec .mini-btn { float: right; min-height: 26px; margin-top: -4px; }
+.roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 5px; margin: 6px 0; }
+.rc { display: flex; gap: 8px; align-items: center; padding: 4px 6px; background: var(--panel2); border: 2px solid #3d3122; border-radius: 4px; line-height: 17px; font-size: 17px; }
+.rc > div { flex: 1; min-width: 0; }
+.rc b { color: var(--accent); font-weight: normal; }
+.rc i { color: var(--good); font-style: normal; }
+.menu button.primary { background: #2f5a2c; border-color: #7ee07e; color: #fff; font-size: 22px; padding: 8px; }
+.volrow { display: flex; align-items: center; gap: 8px; padding: 0 2px; }
+.volrow span { flex: 1; }
+.volrow b { min-width: 56px; text-align: center; font-weight: normal; color: var(--accent); }
+.volrow button { width: 44px; height: 36px; font-size: 20px; background: var(--panel2); border: 2px solid var(--border); border-radius: 3px; }
+@media (max-width: 1100px) { body.quest-open #toasts { top: calc(120px + var(--safe-t)); } }
+
 /* ---------- Mobil ---------- */
 @media (max-width: 760px) {
   html, body { font-size: 16px; }
@@ -271,6 +310,14 @@ body.fast:not(.paused) #fastBadge { display: block; }
   .res img { width: 20px; height: 20px; }
   .spd { min-width: 32px; height: 30px; font-size: 17px; padding: 0 2px; }
   .cbtn, #undoBtn { font-size: 17px; padding: 0 8px; }
+  #quest { top: calc(84px + var(--safe-t)); left: 50px; right: 4px; width: auto; font-size: 15px; line-height: 15px; }
+  .qh { font-size: 17px; }
+  body.info-open #quest { display: none; }
+  body.quest-open #toasts { top: calc(160px + var(--safe-t)); }
+  #minimap { width: 110px; height: 110px; bottom: calc(206px + var(--safe-b)); right: 4px; }
+  .ng { grid-template-columns: 1fr; gap: 2px; }
+  .ng label { margin-top: 4px; }
+  .seg button { font-size: 16px; padding: 2px 4px; }
   .ptable th .full { display: none; }
   .ptable th .short { display: inline; }
   .ptable th { font-size: 13px; padding: 2px 0; }

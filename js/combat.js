@@ -226,5 +226,3 @@ const Combat = {
   },
 };
 
-/** Zvuk přijde v další části – do té doby prázdná náhrada. */
-const Sound = { play() {} };

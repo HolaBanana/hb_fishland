@@ -102,6 +102,7 @@ const Weather = {
     else if (t > 1) this.snow = Math.max(0, this.snow - 0.0002 * (t - 1));
     if (this.cur === 'storm' && this.rain > 0.6 && t > 2 && U.chance(0.0025)) {
       this.flash = 1;
+      Sound.play('thunder');
       // blesk může zapálit strom → požár
       if (U.chance(0.3)) this.strike();
     }

@@ -18,8 +18,8 @@ python3 -m http.server 8000
 # → http://localhost:8000
 ```
 
-Parametry URL: `?seed=123` (nová hra s pevným semínkem mapy, bez nabídky pokračování),
-`?nohelp` (bez úvodní nápovědy).
+Parametr URL `?seed=123` spustí rovnou novou hru s výchozím nastavením a daným semínkem
+(bez nabídky pokračování a okna nové hry) – hodí se pro vývoj a testy.
 
 ### Nasazení na GitHub Pages
 
@@ -63,6 +63,25 @@ v repozitáři zapnout **Settings → Pages → Source: GitHub Actions**. Jde sp
   Přehled výroby a spotřeby je ve *Výroba → Energie*.
 - **Výzkum**: výzkumný stůl a strom technologií odemykající stroje. Dokončení stromu je cíl hry.
 
+### Rozšířený svět
+- **Zvířata**: jeleni a divočáci na mapě, **lov** (práce a dovednost Lov), chov slepic a ovcí
+  u kurníku a ovčína na zóně **Pastvina**. Suroviny maso, vejce, vlna, kůže.
+- **Oblečení a tělesné teplo**: krejčovský stůl šije teplé oblečení z vlny nebo kůže. V zimě bez
+  oblečení a mimo vytopenou místnost kolonista prochladne (nálada, pak zdraví).
+- **Obchodník**: jednou za čas přijede karavana; výměnný obchod přebytků za chybějící suroviny.
+- **Nájezdy a obrana**: nájezdy sílí s bohatstvím kolonie, kuše ze zbrojnice, hradby a brány,
+  automatické střílny zásobované municí z pásu. Mírumilovný režim nájezdy vypne.
+- **Znečištění** z pecí a kotlů se šíří okolím, snižuje náladu a zpomaluje plodiny; přepínatelná vrstva.
+- **Údržba strojů**: opotřebení, porucha a oprava kolonistou (práce Údržba, 1 železný plát).
+- **Logistika navíc**: rozdělovač, třídič s filtrem suroviny, podzemní pás, koleje s vozíkem.
+- **Vztahy**: přátelství a nevraživost podle povah, společného času a jídla; vliv na náladu.
+- **Přehledy**: minimapa s klepnutím pro skok kamery, graf zásob v čase, seznam upozornění s přesunem kamery.
+- **Zvuk** generovaný přes Web Audio (sekera, krumpáč, kladivo, déšť, hrom, stroje, upozornění);
+  hlasitost a vypnutí v Menu, spustí se po prvním dotyku.
+- **Nastavení nové hry**: velikost mapy, voda, hory, lesy, obtížnost, mírumilovný režim, vlastní semínko,
+  výběr a přelosování startovních kolonistů.
+- **Tutoriál jako úkoly** s odměnou (kácení, postel, pole, dílny, výzkum, energie, první vrták); jde přeskočit.
+
 ### Ostatní
 - **Den a noc** s dynamickým osvětlením, **počasí** (jasno, oblačno, déšť/sněžení, bouřka, mlha).
 - **Rychlost času** ❚❚ / 1× / 2× / 3× / 4× a volitelné zrychlení, když všichni spí.
@@ -80,7 +99,8 @@ v repozitáři zapnout **Settings → Pages → Source: GitHub Actions**. Jde sp
 | Vrátit poslední akci | tlačítko ↶ Zpět | `Ctrl+Z` |
 | Otočit stavbu | tlačítko ⟳ v nápovědě nástroje | `R` |
 | Pás | táhni ve směru, kterým má vozit | totéž |
-| Výběr kolonisty / políčka / stroje | klepnutí | kliknutí |
+| Výběr kolonisty / zvířete / políčka / stroje | klepnutí | kliknutí |
+| Minimapa, graf zásob, upozornění | tlačítko Přehled (a minimapa vpravo dole) | totéž |
 | Filtr skladu, cíl dílny | klepni na sklad, truhlu nebo dílnu | totéž |
 | Pauza / rychlost | tlačítka vpravo nahoře | mezerník, `1`–`4` |
 | Zrušit nástroj | ✕ u nápovědy nástroje | `Esc` |
@@ -101,10 +121,17 @@ js/fire.js          – požáry
 js/machines.js      – stav a tick staveb: dílny, stroje, dopravní pásy
 js/power.js         – energetické sítě
 js/research.js      – strom technologií
+js/pollution.js     – znečištění
+js/trade.js         – obchodní karavana
+js/combat.js        – nájezdy, obrana, střílny
+js/carts.js         – koleje a vozíky
+js/social.js        – vztahy mezi kolonisty
+js/sound.js         – zvukové efekty (Web Audio)
+js/quests.js        – tutoriál jako úkoly
 js/jobs.js          – výběr práce podle priorit a průběh jednotlivých úkolů
 js/colonist.js      – kolonista: potřeby, zdraví, nálada, dovednosti, pohyb, rozhodování
-js/animals.js       – zvěř
-js/events.js        – náhodné události
+js/animals.js       – zvěř a hospodářská zvířata
+js/events.js        – náhodné události (poutníci, nájezdy zvěře)
 js/sprites.js       – procedurální pixel-art grafika
 js/camera.js        – kamera a zoom
 js/tools.js         – nástroje hráče (označování, stavění, zóny, Zpět)

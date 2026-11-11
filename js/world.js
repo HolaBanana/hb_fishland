@@ -102,9 +102,10 @@ const World = {
   inb(x, y) { return x >= 0 && y >= 0 && x < this.w && y < this.h; },
 
   // ---------- Generování mapy ----------
-  generate(seed) {
+  generate(seed, opts) {
     this.seed = seed;
-    const w = Config.MAP_W, h = Config.MAP_H;
+    const o = this.opts = Object.assign(NEWGAME.defaults(), opts);
+    const w = NEWGAME.size[o.size].n, h = w;
     this.alloc(w, h);
     const n = this.n;
     const elev = new Float32Array(n), moist = new Float32Array(n), forest = new Float32Array(n), oreN = new Float32Array(n);
@@ -122,9 +123,10 @@ const World = {
     }
     // prahy podle kvantilů → stabilní složení mapy pro libovolné semínko
     const q = (arr, p) => { const s = Float32Array.from(arr).sort(); return s[Math.floor(p * (s.length - 1))]; };
-    const eWater = q(elev, 0.08), eShallow = q(elev, 0.11), eSand = q(elev, 0.14), eRock = q(elev, 0.78);
+    const qw = NEWGAME.water[o.water];
+    const eWater = q(elev, qw), eShallow = q(elev, qw + 0.03), eSand = q(elev, qw + 0.06), eRock = q(elev, NEWGAME.rock[o.rock]);
     const mSoil = q(moist, 0.78), mDirt = q(moist, 0.08);
-    const fTree = q(forest, 0.55);
+    const fTree = q(forest, NEWGAME.forest[o.forest]);
 
     for (let i = 0; i < n; i++) {
       const e = elev[i];
@@ -222,8 +224,9 @@ const World = {
       if (st[k] !== undefined && !this.items[st[k]]) n = this.putItem(st[k], type, n);
       if (n > 0) this.dropItem(sx, sy + 1, type, n);
     };
-    put(0, 'wood', 75); put(1, 'wood', 75); put(2, 'wood', 30);
-    put(3, 'meal', 18); put(4, 'food', 30); put(5, 'stone', 20);
+    const m = NEWGAME.difficulty[this.opts.difficulty].supplies;
+    put(0, 'wood', 75); put(1, 'wood', Math.round(75 * Math.min(1, m))); put(2, 'wood', Math.round(30 * m));
+    put(3, 'meal', Math.round(18 * m)); put(4, 'food', Math.round(30 * m)); put(5, 'stone', Math.round(20 * m));
   },
 
   // ---------- Průchodnost ----------

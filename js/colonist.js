@@ -67,6 +67,11 @@ class Colonist {
     let f = (skill ? this.skillFactor(skill) : 1) * this.moodFactor() * (this.trait.work || 1);
     if (this.hunger < 5) f *= 0.7;
     if (skill) this.gainXp(skill, 0.07);
+    // zvuk práce podle druhu úkolu
+    if ((this.sndT = (this.sndT || 0) + 1) % 26 === 0 && this.job) {
+      const snd = { chop: 'chop', mine: 'pick', build: 'hammer', decon: 'hammer', craft: 'hammer', repair: 'hammer' }[this.job.type];
+      if (snd && !(this.job.type === 'build' && this.job.stage < 4)) Sound.play(snd, this.x, this.y);
+    }
     return f;
   }
   xpNeed(lvl) { return 50 + lvl * 18; }
@@ -277,7 +282,7 @@ class Colonist {
     this.working = false;
     this.eating = false;
     // potřeby
-    this.hunger = Math.max(0, this.hunger - (100 / 20) * h * (this.trait.hunger || 1) * (this.sleeping ? 0.5 : 1));
+    this.hunger = Math.max(0, this.hunger - (100 / 20) * h * (this.trait.hunger || 1) * (this.sleeping ? 0.5 : 1) * NEWGAME.difficulty[Game.difficulty].hunger);
     if (!this.sleeping) this.energy = Math.max(0, this.energy - (100 / 21) * h);
     if (++this.tickN >= 30) { this.tickN = 0; this.updateMood(30 * h); this.updateHealth(30 * h); if (this.dead) return; }
 
@@ -336,6 +341,17 @@ function makeColonist(id, x, y, usedFirst, opts = {}) {
     style: gender === 'f' ? U.pick(['long', 'long', 'bun', 'short']) : U.pick(['short', 'short', 'spiky', 'bald', 'beard']),
   };
   return new Colonist(id, x, y, { gender, first, last, look, skills, trait: opts.trait || U.pick(TRAITS), age: U.int(19, 52) });
+}
+
+/** Rozestaví předem vybranou skupinu kolonistů kolem startu. */
+function placeRoster(roster, start) {
+  const offsets = [[-1, 0], [1, 0], [0, 1], [2, 1]];
+  roster.forEach((c, k) => {
+    const [ox, oy] = offsets[k % 4];
+    const p = World.canWalk(start.x + ox, start.y + oy) ? { x: start.x + ox, y: start.y + oy } : World.nearestWalkable(start.x, start.y);
+    c.id = k; c.x = p.x + 0.5; c.y = p.y + 0.5;
+  });
+  return roster;
 }
 
 /** Vytvoří náhodnou startovní skupinu kolonistů (každý má jinou specializaci). */

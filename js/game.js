@@ -26,11 +26,15 @@ const Game = {
   notified: new Map(),
   acc: 0,
 
-  init(seed) {
+  init(seed, opts, roster) {
     this.seed = seed;
     U.seed(seed);
     TimeSys.reset();
-    World.generate(seed);
+    World.generate(seed, opts);
+    this.opts = World.opts;
+    this.difficulty = World.opts.difficulty;
+    this.peaceful = !!World.opts.peaceful;
+    this.history = [];
     Pathfinder.init(World.w, World.h);
     Sprites.buildTerrain();
     this.res.clear(); this.itemRes.clear(); this.notified.clear();
@@ -41,8 +45,9 @@ const Game = {
     this.shots = [];
     this.stats = { built: 0, chopped: 0, mined: 0, cooked: 0, harvested: 0, cropsEaten: 0, joined: 0, crafted: 0, machined: 0, deaths: [] };
     Fire.reset(); Animals.reset(); Power.reset(); Research.reset(); Pollution.reset();
-    this.colonists = createColonists(World.start);
+    this.colonists = roster ? placeRoster(roster, World.start) : createColonists(World.start);
     this.nextId = this.colonists.length;
+    Quests.reset();
     Weather.reset();
     Events.reset(); Trade.reset(); Combat.reset(); Carts.reset();
     Camera.zoom = Config.ZOOM_DEFAULT;
@@ -50,13 +55,13 @@ const Game = {
   },
 
   /** Nová kolonie na nové mapě (i za běhu hry). */
-  newGame(seed) {
-    this.init(seed);
+  newGame(seed, opts, roster) {
+    this.init(seed, opts, roster);
     this.afterLoad();
   },
   /** Načte uloženou hru: svět se vygeneruje ze semínka a doplní se uložené změny. */
   load(data) {
-    this.init(data.seed);
+    this.init(data.seed, data.opts);
     Save.apply(data);
     this.afterLoad();
   },
@@ -147,6 +152,13 @@ const Game = {
     if (this.alerts.length > 40) this.alerts.shift();
     UI.toast(msg, kind);
   },
+  /** Hodinový vzorek zásob pro graf (posledních 14 dní). */
+  sample() {
+    const row = { t: Math.round(TimeSys.minutes), n: Game.colonists.length };
+    for (const k of ITEM_KEYS) if (World.counts[k]) row[k] = World.counts[k];
+    this.history.push(row);
+    if (this.history.length > 24 * 14) this.history.shift();
+  },
   /** Výstřel / hod – jen vizuální stopa. */
   shot(x0, y0, x1, y1, col) { if (this.shots.length < 40) this.shots.push({ x0, y0, x1, y1, col, t: 7 }); },
   /** Smrt kolonisty; když zemřou všichni, hra končí. */
@@ -192,6 +204,7 @@ const Game = {
   togglePause() { this.setSpeed(this.speed === 0 ? this.lastSpeed : 0); },
   setPeaceful(on) {
     this.peaceful = !!on;
+    if (this.opts) this.opts.peaceful = !!on;
     if (on && Combat.raiders.length) { for (const r of Combat.raiders) r.flee(); }
   },
   setAutoFast(on) {
@@ -230,7 +243,7 @@ const Game = {
     this.tickCount++;
     const hourBefore = TimeSys.lastHour;
     TimeSys.tick();
-    if (TimeSys.lastHour !== hourBefore) { Events.hourly(); Animals.hourly(); Trade.hourly(); Combat.hourly(); Social.hourly(); Save.auto(); }   // jednou za herní hodinu
+    if (TimeSys.lastHour !== hourBefore) { this.sample(); Events.hourly(); Animals.hourly(); Trade.hourly(); Combat.hourly(); Social.hourly(); Save.auto(); }   // jednou za herní hodinu
     Weather.tick();
     if (this.tickCount % 30 === 0) {
       const hours = 30 * Config.HOURS_PER_TICK;
@@ -260,7 +273,7 @@ const Game = {
       Camera.update();
       Renderer.draw(dt);
       uiT += dt;
-      if (uiT > 0.25) { uiT = 0; UI.update(); }
+      if (uiT > 0.25) { uiT = 0; UI.update(); Sound.update(); if (!this.over) Quests.check(); }
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);

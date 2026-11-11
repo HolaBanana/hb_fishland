@@ -31,9 +31,24 @@ const Config = {
   BELT_STACK: 8,           // max. kusů na políčku pásu
   POWER_LINK: 7,           // dosah propojení zdrojů a sloupů (políčka)
   POWER_REACH: 5,          // dosah napájení strojů od zdroje / sloupu
-  RESEARCH_RATE: 0.009,    // bodů výzkumu za tick práce při rychlosti 1         // dosah pro hromadné zásobování sousedních plánů
+  RESEARCH_RATE: 0.011,    // bodů výzkumu za tick práce při rychlosti 1         // dosah pro hromadné zásobování sousedních plánů
 };
 Config.HOURS_PER_TICK = Config.MIN_PER_TICK / 60;
+
+// Volby nové hry (velikost mapy, množství vody / hor / lesů, obtížnost)
+const NEWGAME = {
+  size:   { small: { name: 'Malá', n: 80 }, medium: { name: 'Střední', n: 120 }, large: { name: 'Velká', n: 160 } },
+  amount: { low: 'Málo', normal: 'Normálně', high: 'Hodně' },
+  water:  { low: 0.035, normal: 0.08, high: 0.15 },      // podíl hluboké vody
+  rock:   { low: 0.87, normal: 0.78, high: 0.67 },       // kvantil výšky, od kterého začínají hory
+  forest: { low: 0.74, normal: 0.55, high: 0.36 },       // kvantil hustoty lesa
+  difficulty: {
+    easy:   { name: 'Lehká',    supplies: 1.6, hunger: 0.85, desc: 'Víc zásob, pomalejší hlad, slabší nájezdy.' },
+    normal: { name: 'Normální', supplies: 1,   hunger: 1,    desc: 'Vyvážená hra.' },
+    hard:   { name: 'Těžká',    supplies: 0.6, hunger: 1.15, desc: 'Méně zásob, rychlejší hlad, silnější nájezdy.' },
+  },
+  defaults() { return { size: 'medium', water: 'normal', rock: 'normal', forest: 'normal', difficulty: 'normal', peaceful: false }; },
+};
 
 // Typy terénu
 const T = { WATER: 0, SHALLOW: 1, SAND: 2, GRASS: 3, SOIL: 4, DIRT: 5, GRAVEL: 6 };

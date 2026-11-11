@@ -51,6 +51,10 @@ const Save = {
     return {
       v: this.VERSION,
       seed: Game.seed,
+      opts: Game.opts,
+      quests: Quests.pack(),
+      history: Game.history,
+      alerts: Game.alerts,
       savedAt: Date.now(),
       label: `Den ${TimeSys.day}, ${TimeSys.timeStr()}`,
       time: { minutes: TimeSys.minutes, lastHour: TimeSys.lastHour },
@@ -149,6 +153,9 @@ const Save = {
     Trade.unpack(d.trade);
     Combat.unpack(d.combat);
     Carts.unpack(d.carts);
+    Quests.unpack(d.quests);
+    Game.history = d.history || [];
+    Game.alerts = d.alerts || [];
     Game.peaceful = !!d.peaceful; Game.difficulty = d.difficulty || 'normal';
     Power.reset();
     Game.tickCount = d.tick || 0;
