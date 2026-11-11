@@ -47,7 +47,13 @@ const NEWGAME = {
     normal: { name: 'Normální', supplies: 1,   hunger: 1,    desc: 'Vyvážená hra.' },
     hard:   { name: 'Těžká',    supplies: 0.6, hunger: 1.15, desc: 'Méně zásob, rychlejší hlad, silnější nájezdy.' },
   },
-  defaults() { return { size: 'medium', water: 'normal', rock: 'normal', forest: 'normal', difficulty: 'normal', peaceful: false }; },
+  scenario: {
+    normal: { name: 'Klasický',   desc: 'Čtyři kolonisté na jaře na pevnině.' },
+    alone:  { name: 'Sám',        desc: 'Jediný všestranný kolonista s většími zásobami. Další se mohou přidat později.' },
+    winter: { name: 'Před zimou', desc: 'Start na konci podzimu – zima přijde druhý den. Víc jídla a dvoje teplé oblečení.' },
+    island: { name: 'Ostrov',     desc: 'Ostrov uprostřed moře: málo místa a dřeva, nájezdníci připlouvají jen ze břehu.' },
+  },
+  defaults() { return { size: 'medium', water: 'normal', rock: 'normal', forest: 'normal', difficulty: 'normal', peaceful: false, scenario: 'normal' }; },
 };
 
 // Typy terénu

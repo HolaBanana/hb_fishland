@@ -205,6 +205,26 @@ const Save = {
   },
   clear() { try { localStorage.removeItem(this.KEY); } catch (e) { /* nic */ } },
 
+  // ---------- Ruční pozice ----------
+  SLOTS: 3,
+  slotKey(n) { return 'kolonie.slot' + n; },
+  storeSlot(n) {
+    try { localStorage.setItem(this.slotKey(n), JSON.stringify(this.serialize())); return true; }
+    catch (e) { this.lastError = e; return false; }
+  },
+  peekSlot(n) {
+    try { const d = JSON.parse(localStorage.getItem(this.slotKey(n))); return this.valid(d) ? d : null; }
+    catch (e) { return null; }
+  },
+  clearSlot(n) { try { localStorage.removeItem(this.slotKey(n)); } catch (e) { /* nic */ } },
+  /** Všechny uložené hry: automatická + ruční pozice. */
+  list() {
+    const out = [{ slot: 0, name: 'Automatické uložení', d: this.peek() }];
+    for (let n = 1; n <= this.SLOTS; n++) out.push({ slot: n, name: 'Pozice ' + n, d: this.peekSlot(n) });
+    return out;
+  },
+  any() { return this.list().some(s => s.d); },
+
   // ---------- Soubor ----------
   exportFile() {
     const d = this.serialize();

@@ -43,6 +43,12 @@ v repozitáři zapnout **Settings → Pages → Source: GitHub Actions**. Jde sp
   sousedních plánů najednou.
 
 ### Přežití
+- **Plodiny podle období**: brambory, kukuřice (jen v teple), zelí (snese mráz), léčivé byliny.
+  Druh se volí pro celé pole klepnutím na pole.
+- **Nemoci a zranění**: chřipka, otrava jídlem, zánět rány a krvácení z boje. Léčí je lékař
+  (práce Lékař, dovednost Lékařství) – s léky z lékárny nebo s bylinami; pomáhá odpočinek v posteli.
+- **Teplo**: prochladlí kolonisté se chodí ohřát k ohni nebo do vytápěné místnosti a bez postele
+  v zimě spí u ohně. Stavby zničené nájezdem nebo požárem se samy naplánují znovu.
 - **Roční období** po 4 dnech s teplotou a sněhem. V zimě plodiny nerostou a keře neplodí.
 - **Kažení potravin**: syrové se kazí rychleji než uvařené; pod střechou, v truhle a v chladu pomaleji.
 - **Místnosti a střecha**: prostor uzavřený zdmi a dveřmi je zastřešený – neprší v něm a drží
@@ -61,7 +67,14 @@ v repozitáři zapnout **Settings → Pages → Source: GitHub Actions**. Jde sp
 - **Energie**: vodní kolo (na mělké vodě, v mrazu zamrzá), větrník (podle síly větru), kotel na dřevo.
   Sítě se propojují dosahem a sloupy vedení; při nedostatku energie stroje zpomalí, bez ní stojí.
   Přehled výroby a spotřeby je ve *Výroba → Energie*.
-- **Výzkum**: výzkumný stůl a strom technologií odemykající stroje. Dokončení stromu je cíl hry.
+- **Výzkum**: výzkumný stůl a strom technologií odemykající stroje.
+
+### Pozdní hra a cíl
+- **Elektřina**: elektrické topení, strojní dílna a montážní linka na součástky.
+- **Skleníky**: pole uvnitř vytápěné místnosti roste i v zimě.
+- **Zemědělské stroje**: sklízecí stroj sám zasévá a sklízí pole v okolí.
+- **Cíl hry**: vyzkoumej Rádiové spojení, postav vysílačku (2×2) a dej jí 48 hodin nepřetržitě
+  energii – přiletí záchranná loď. Pak se dá hrát dál.
 
 ### Rozšířený svět
 - **Zvířata**: jeleni a divočáci na mapě, **lov** (práce a dovednost Lov), chov slepic a ovcí
@@ -80,7 +93,10 @@ v repozitáři zapnout **Settings → Pages → Source: GitHub Actions**. Jde sp
   hlasitost a vypnutí v Menu, spustí se po prvním dotyku.
 - **Nastavení nové hry**: velikost mapy, voda, hory, lesy, obtížnost, mírumilovný režim, vlastní semínko,
   výběr a přelosování startovních kolonistů.
-- **Tutoriál jako úkoly** s odměnou (kácení, postel, pole, dílny, výzkum, energie, první vrták); jde přeskočit.
+- **Tutoriál jako úkoly** s odměnou (kácení, postel, pole, dílny, výzkum, energie, vrták, vysílačka); jde přeskočit.
+- **Scénáře**: Klasický, Sám (jeden všestranný kolonista), Před zimou (start na konci podzimu) a Ostrov.
+- **Více pozic pro uložení**: automatické uložení a 3 ruční pozice (Menu → Uložit / načíst pozice).
+- **Výkon**: přírodní objekty se při oddálení kreslí z předkreslených bloků; v Menu je úsporný režim (30 snímků/s).
 
 ### Ostatní
 - **Den a noc** s dynamickým osvětlením, **počasí** (jasno, oblačno, déšť/sněžení, bouřka, mlha).
@@ -121,6 +137,8 @@ js/fire.js          – požáry
 js/machines.js      – stav a tick staveb: dílny, stroje, dopravní pásy
 js/power.js         – energetické sítě
 js/research.js      – strom technologií
+js/crops.js         – druhy plodin
+js/medicine.js      – nemoci, zranění a léčení
 js/pollution.js     – znečištění
 js/trade.js         – obchodní karavana
 js/combat.js        – nájezdy, obrana, střílny

@@ -122,10 +122,23 @@ const World = {
       oreN[i] = U.fbm(x / 5, y / 5, seed + 301, 2);
       this.variant[i] = (U.hash2(x, y, seed + 5) * 256) | 0;
     }
+    // ostrov: výška klesá k okrajům mapy
+    if (o.scenario === 'island') {
+      const R = 0.47 * w;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        const d = Math.hypot(x - w / 2, y - h / 2) / R;
+        elev[i] = elev[i] * 0.45 + Math.pow(U.clamp(1 - d, 0, 1), 0.8) * 0.75;
+      }
+    }
     // prahy podle kvantilů → stabilní složení mapy pro libovolné semínko
     const q = (arr, p) => { const s = Float32Array.from(arr).sort(); return s[Math.floor(p * (s.length - 1))]; };
-    const qw = NEWGAME.water[o.water];
-    const eWater = q(elev, qw), eShallow = q(elev, qw + 0.03), eSand = q(elev, qw + 0.06), eRock = q(elev, NEWGAME.rock[o.rock]);
+    const qw = o.scenario === 'island' ? 0.3 + NEWGAME.water[o.water] * 0.5 : NEWGAME.water[o.water];
+    const eWater = q(elev, qw), eShallow = q(elev, qw + 0.03), eSand = q(elev, qw + 0.06);
+    // hory: na ostrově se práh počítá jen ze souše, jinak by moře posunulo hory přes půl ostrova
+    const eRock = o.scenario === 'island'
+      ? q(elev.filter(e => e > eSand), Math.min(0.95, NEWGAME.rock[o.rock] + 0.08))
+      : q(elev, NEWGAME.rock[o.rock]);
     const mSoil = q(moist, 0.78), mDirt = q(moist, 0.08);
     const fTree = q(forest, NEWGAME.forest[o.forest]);
 
@@ -228,6 +241,15 @@ const World = {
     const m = NEWGAME.difficulty[this.opts.difficulty].supplies;
     put(0, 'wood', 75); put(1, 'wood', Math.round(75 * Math.min(1, m))); put(2, 'wood', Math.round(30 * m));
     put(3, 'meal', Math.round(18 * m)); put(4, 'food', Math.round(30 * m)); put(5, 'stone', Math.round(20 * m));
+    if (this.opts.scenario === 'winter') {
+      put(6, 'meal', 40); put(7, 'coat', 2); put(8, 'wood', 75);
+      // hotové ohniště u tábora
+      for (const [dx, dy] of [[3, -2], [4, -2], [-3, -2], [3, 0]]) {
+        const i = this.idx(sx + dx, sy + dy);
+        if (this.walk[i] && !this.obj[i] && !this.zone[i]) { this.placeBlueprint(i, 'campfire'); this.completeBlueprint(i); break; }
+      }
+    }
+    if (this.opts.scenario === 'alone') { put(6, 'meal', 12); put(7, 'plank', 20); }
   },
 
   // ---------- Průchodnost ----------
@@ -647,7 +669,7 @@ const World = {
       for (const f of this.lights) {
         const s = this.struct[f];
         if (!s || !BUILD[s.type].heat) continue;
-        if (Math.abs((f % this.w) - x) <= 2 && Math.abs(((f / this.w) | 0) - y) <= 2) { t += 7; break; }
+        if (Math.abs((f % this.w) - x) <= 2 && Math.abs(((f / this.w) | 0) - y) <= 2) { t += 12; break; }
       }
     }
     return t;

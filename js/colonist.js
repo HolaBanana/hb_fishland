@@ -281,7 +281,13 @@ class Colonist {
       Game.notifyOnce('nofood', 'Kolonisté nemají co jíst! Sbírejte bobule nebo založte pole.', 'warn', 180);
     }
     if (this.energy < 25 || (night && this.energy < 92)) {
-      this.startJob({ type: 'sleep', bed: Jobs.findBed(this) });
+      const bed = Jobs.findBed(this);
+      // bez postele v mrazu se vyspí u ohně
+      if (bed < 0 && !this.coat && TimeSys.temp() < 3) {
+        const w = Jobs.findWarmth(this);
+        if (w >= 0) { this.startJob({ type: 'warm', i: w }); return; }
+      }
+      this.startJob({ type: 'sleep', bed });
       return;
     }
     // vážně nemocný si lehne do postele

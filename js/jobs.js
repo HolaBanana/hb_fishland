@@ -107,7 +107,7 @@ const Jobs = (() => {
     const consider = (i) => {
       if (!World.walk[i] || World.struct[i] || (c.unreach.get('w' + i) || 0) > now) return;
       const d = Math.abs(ix(i) - c.tx) + Math.abs(iy(i) - c.ty);
-      if (d < bd && World.tempAt(i) >= 8) { bd = d; best = i; }
+      if (d < bd && World.tempAt(i) >= 5) { bd = d; best = i; }
     };
     for (const f of World.lights) {
       const s = World.struct[f];
@@ -893,9 +893,10 @@ const Jobs = (() => {
         j.stage = 1;
       }
       c.activity = 'Ohřívá se';
-      if (c.warmth >= 85 || (c.hunger < 15 && hasFood())) return DONE;
+      const tired = TimeSys.isNight() ? c.energy < 97 : c.energy < 30;
+      if ((c.warmth >= 85 && !tired) || (c.hunger < 15 && hasFood())) { c.sleeping = false; return DONE; }
       // v noci se vyspí rovnou tady
-      if (TimeSys.isNight() && c.energy < 80) { c.sleeping = true; c.activity = 'Spí u tepla'; c.energy = Math.min(100, c.energy + 100 / 9.5 * Config.HOURS_PER_TICK); }
+      if (tired) { c.sleeping = true; c.activity = 'Spí u tepla'; c.energy = Math.min(100, c.energy + 100 / 9.5 * Config.HOURS_PER_TICK); }
       else c.sleeping = false;
     },
 

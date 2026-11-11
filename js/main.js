@@ -52,7 +52,6 @@ window.addEventListener('DOMContentLoaded', () => {
   // ?seed=… spustí rovnou novou hru s výchozím nastavením (vývoj a testy)
   if (params.has('seed')) { Main.boot(null, parseInt(params.get('seed'), 10) || 1); return; }
   document.getElementById('loading').classList.add('hidden');
-  const saved = Save.peek();
-  if (saved) UI.askContinue(saved);
+  if (Save.any()) UI.askContinue();
   else UI.openNewGame();
 });

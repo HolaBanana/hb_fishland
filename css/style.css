@@ -296,6 +296,12 @@ body.fast:not(.paused) #fastBadge { display: block; }
 .rc b { color: var(--accent); font-weight: normal; }
 .rc i { color: var(--good); font-style: normal; }
 .menu button.primary { background: #2f5a2c; border-color: #7ee07e; color: #fff; font-size: 22px; padding: 8px; }
+.saves { display: flex; flex-direction: column; gap: 5px; margin: 6px 0; }
+.srow { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 5px 8px; background: var(--panel2); border: 2px solid #3d3122; border-radius: 4px; line-height: 17px; }
+.srow b { color: var(--accent); font-weight: normal; }
+.sbtns { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.sbtns button { min-height: 36px; padding: 2px 10px; font-size: 17px; background: var(--bg); border: 2px solid var(--border); border-radius: 3px; }
+.sbtns button.del { border-color: #8a4a44; }
 .volrow { display: flex; align-items: center; gap: 8px; padding: 0 2px; }
 .volrow span { flex: 1; }
 .volrow b { min-width: 56px; text-align: center; font-weight: normal; color: var(--accent); }

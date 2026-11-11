@@ -47,7 +47,17 @@ const Game = {
     this.shots = [];
     this.stats = { built: 0, chopped: 0, mined: 0, cooked: 0, harvested: 0, cropsEaten: 0, joined: 0, crafted: 0, machined: 0, deaths: [] };
     Fire.reset(); Animals.reset(); Power.reset(); Research.reset(); Pollution.reset();
-    this.colonists = roster ? placeRoster(roster, World.start) : createColonists(World.start);
+    const sc = World.opts.scenario;
+    if (sc === 'winter') TimeSys.minutes = (Config.SEASON_DAYS * 3 - 1) * 1440 + 7 * 60;   // poslední den podzimu
+    TimeSys.lastHour = Math.floor(TimeSys.hour);
+    let crew = roster ? roster.slice() : createColonists(World.start);
+    if (sc === 'alone') {
+      crew = crew.slice(0, 1);
+      // samotář umí od všeho trochu
+      for (const k in crew[0].skills) crew[0].skills[k].lvl = Math.max(crew[0].skills[k].lvl, 5);
+      for (const w of WORK_TYPES) crew[0].priorities[w.id] = w.id === 'research' || w.id === 'haul' ? 3 : 2;
+    }
+    this.colonists = roster ? placeRoster(crew, World.start) : crew;
     this.nextId = this.colonists.length;
     Quests.reset();
     Weather.reset();

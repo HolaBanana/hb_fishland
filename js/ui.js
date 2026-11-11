@@ -458,7 +458,7 @@ const UI = {
       m.innerHTML = `<div class="mbox"><div class="mhead"><b>Menu</b><button class="x" id="mClose">✕</button></div>
         <div class="menu">
           <button id="mBack">Pokračovat ve hře</button>
-          <button id="mSave">Uložit nyní</button>
+          <button id="mSave">Uložit / načíst pozice…</button>
           <button id="mExport">Exportovat hru do souboru</button>
           <button id="mImport">Importovat hru ze souboru</button>
           <button id="mAuto">Zrychlit čas, když všichni spí: <b class="${Game.autoFast ? 'on' : 'off'}">${Game.autoFast ? 'ZAP' : 'VYP'}</b></button>
@@ -473,11 +473,7 @@ const UI = {
       const close = () => m.classList.add('hidden');
       this.$('mClose').onclick = close;
       this.$('mBack').onclick = close;
-      this.$('mSave').onclick = () => {
-        close();
-        if (Save.store()) this.toast('Hra uložena.', 'good');
-        else this.toast('Uložení do prohlížeče selhalo – použij export do souboru.', 'warn');
-      };
+      this.$('mSave').onclick = () => { Save.store(); this.openSaves(); };
       this.$('mExport').onclick = () => { close(); Save.exportFile(); this.toast('Uložená hra se stahuje jako soubor.', 'good'); };
       this.$('mImport').onclick = () => { close(); this.$('importFile').click(); };
       this.$('mAuto').onclick = () => { Game.setAutoFast(!Game.autoFast); render(); };
@@ -496,19 +492,48 @@ const UI = {
   },
 
   /** Úvodní dotaz: pokračovat z uložené hry, nebo začít znovu. */
-  askContinue(saved) {
+  askContinue() {
     const m = this.$('modal');
-    const when = new Date(saved.savedAt).toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const rows = Save.list().filter(r => r.d);
     m.innerHTML = `<div class="mbox"><div class="mhead"><b>Kolonie</b></div>
-      <p>Nalezena uložená hra: <b class="on">${saved.label}</b><br><span class="mnote">${saved.colonists.map(c => c.first).join(', ')} · uloženo ${when}</span></p>
-      <div class="menu">
-        <button id="mCont">Pokračovat</button>
-        <button id="mNewGame">Nová kolonie</button>
-      </div></div>`;
+      <div class="saves">${rows.map(r => this.saveRow(r, false)).join('')}</div>
+      <div class="menu"><button id="mNewGame" class="primary">Nová kolonie</button></div></div>`;
     m.classList.remove('hidden');
     m.onclick = null;
-    this.$('mCont').onclick = () => Main.boot(saved);
-    this.$('mNewGame').onclick = () => this.openNewGame(() => this.askContinue(saved));
+    m.querySelectorAll('[data-load]').forEach(b => b.onclick = () => { const r = rows.find(q => q.slot === +b.dataset.load); Main.boot(r.d); });
+    this.$('mNewGame').onclick = () => this.openNewGame(() => this.askContinue());
+  },
+  saveRow(r, inGame) {
+    const d = r.d;
+    const when = d ? new Date(d.savedAt).toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    const sc = d && d.opts && d.opts.scenario && d.opts.scenario !== 'normal' ? ' · ' + NEWGAME.scenario[d.opts.scenario].name : '';
+    return `<div class="srow"><div><b>${r.name}</b><br>${d ? `<span class="on">${d.label}</span>${sc}<br><span class="mnote">${d.colonists.map(c => c.first).join(', ')} · ${when}</span>` : '<span class="mnote">prázdná</span>'}</div>
+      <div class="sbtns">${inGame && r.slot > 0 ? `<button data-store="${r.slot}">Uložit sem</button>` : ''}${d ? `<button data-load="${r.slot}">Načíst</button>` : ''}${inGame && r.slot > 0 && d ? `<button data-del="${r.slot}" class="del">✕</button>` : ''}</div></div>`;
+  },
+  /** Ukládání a načítání pozic za běhu hry. */
+  openSaves() {
+    const m = this.$('modal');
+    const render = () => {
+      const rows = Save.list();
+      m.innerHTML = `<div class="mbox wide"><div class="mhead"><b>Uložené hry</b><button class="x" id="mClose">✕</button></div>
+        <p class="mnote">Automatické uložení probíhá každou herní hodinu. Do pozic 1–${Save.SLOTS} ukládáš ručně – hodí se před riskantním krokem.</p>
+        <div class="saves">${rows.map(r => this.saveRow(r, true)).join('')}</div></div>`;
+      m.classList.remove('hidden');
+      this.$('mClose').onclick = () => m.classList.add('hidden');
+      m.querySelectorAll('[data-store]').forEach(b => b.onclick = () => {
+        const n = +b.dataset.store;
+        if (Save.peekSlot(n) && !confirm(`Přepsat pozici ${n}?`)) return;
+        if (Save.storeSlot(n)) this.toast(`Uloženo do pozice ${n}.`, 'good'); else this.toast('Uložení se nepodařilo – úložiště prohlížeče je plné nebo nedostupné.', 'warn');
+        render();
+      });
+      m.querySelectorAll('[data-load]').forEach(b => b.onclick = () => {
+        const r = rows.find(q => q.slot === +b.dataset.load);
+        if (confirm('Načíst tuto hru? Neuložený postup od posledního uložení se ztratí.')) Main.boot(r.d);
+      });
+      m.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { if (confirm('Smazat tuto pozici?')) { Save.clearSlot(+b.dataset.del); render(); } });
+    };
+    m.onclick = (e) => { if (e.target === m) m.classList.add('hidden'); };
+    render();
   },
 
   openHelp(first) {
@@ -557,6 +582,11 @@ const UI = {
         <li><b>Vztahy:</b> kolonisté se spřátelí nebo znesváří podle povah, společného času a jídla; najdeš je v kartě kolonisty.</li>
         <li><b>Přehled:</b> mapa s klepnutím pro skok kamery, graf zásob a seznam upozornění s tlačítkem Ukázat.</li>
         <li><b>Zvuk:</b> hlasitost a vypnutí jsou v Menu.</li>
+        <li><b>Plodiny:</b> klepni na pole a vyber brambory, kukuřici (jen v teple), zelí (snese mráz) nebo léčivé byliny.</li>
+        <li><b>Nemoci a zranění:</b> lékař (práce Lékař) ošetřuje nemocné a raněné – nejlépe s léky z Lékárny. Nemocní leží v posteli.</li>
+        <li><b>Skleník:</b> pole uvnitř vytápěné místnosti (ohniště nebo elektrické topení) roste i v zimě.</li>
+        <li><b>Cíl hry:</b> vyzkoumej Rádiové spojení, postav Vysílačku a dej jí 48 hodin energii – přiletí záchranná loď.</li>
+        <li><b>Uložené hry:</b> Menu → Uložit / načíst pozice – automatické uložení a 3 ruční pozice.</li>
       </ul>
       <h4>Přežití</h4>
       <ul>
@@ -591,6 +621,8 @@ const UI = {
     const render = () => {
       m.innerHTML = `<div class="mbox wide"><div class="mhead"><b>Nová kolonie</b>${onBack ? '<button class="x" id="mClose">✕</button>' : ''}</div>
         <div class="ng">
+          <label>Scénář</label>${seg('scenario', NEWGAME.scenario)}
+          <label></label><div class="mnote">${NEWGAME.scenario[st.opts.scenario].desc}</div>
           <label>Velikost mapy</label>${seg('size', NEWGAME.size)}
           <label>Voda</label>${seg('water', NEWGAME.amount)}
           <label>Hory</label>${seg('rock', NEWGAME.amount)}
@@ -600,8 +632,8 @@ const UI = {
           <label>Nájezdy</label><div class="seg"><button class="${!st.opts.peaceful ? 'on' : ''}" data-peace="0">Zapnuté</button><button class="${st.opts.peaceful ? 'on' : ''}" data-peace="1">Mírumilovný režim</button></div>
           <label>Semínko mapy</label><div class="seedrow"><input id="ngSeed" type="number" inputmode="numeric" placeholder="náhodné" value="${st.seed}"><button id="ngDice">Náhodné</button></div>
         </div>
-        <div class="psec">Kolonisté <button id="ngAll" class="mini-btn">Přelosovat všechny</button></div>
-        <div class="roster">${st.roster.map((c, k) => {
+        <div class="psec">${st.opts.scenario === 'alone' ? 'Kolonista' : 'Kolonisté'} <button id="ngAll" class="mini-btn">Přelosovat všechny</button></div>
+        <div class="roster">${st.roster.slice(0, st.opts.scenario === 'alone' ? 1 : 4).map((c, k) => {
           const top = Object.keys(c.skills).sort((a, b) => c.skills[b].lvl - c.skills[a].lvl).slice(0, 3).map(s => `${SKILLS[s]} ${c.skills[s].lvl}`).join(', ');
           return `<div class="rc"><img class="pix portrait" src="${Sprites.toURL(c.portrait, 4)}" alt=""><div><b>${c.name}</b>, ${c.age} let<br><i>${c.trait.name}</i> – ${c.trait.desc}<br><span class="mnote">${top}</span></div><button class="mini-btn" data-roll="${k}" title="Přelosovat">↻</button></div>`;
         }).join('')}</div>

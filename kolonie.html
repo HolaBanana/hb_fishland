@@ -306,6 +306,12 @@ body.fast:not(.paused) #fastBadge { display: block; }
 .rc b { color: var(--accent); font-weight: normal; }
 .rc i { color: var(--good); font-style: normal; }
 .menu button.primary { background: #2f5a2c; border-color: #7ee07e; color: #fff; font-size: 22px; padding: 8px; }
+.saves { display: flex; flex-direction: column; gap: 5px; margin: 6px 0; }
+.srow { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 5px 8px; background: var(--panel2); border: 2px solid #3d3122; border-radius: 4px; line-height: 17px; }
+.srow b { color: var(--accent); font-weight: normal; }
+.sbtns { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.sbtns button { min-height: 36px; padding: 2px 10px; font-size: 17px; background: var(--bg); border: 2px solid var(--border); border-radius: 3px; }
+.sbtns button.del { border-color: #8a4a44; }
 .volrow { display: flex; align-items: center; gap: 8px; padding: 0 2px; }
 .volrow span { flex: 1; }
 .volrow b { min-width: 56px; text-align: center; font-weight: normal; color: var(--accent); }
@@ -536,7 +542,13 @@ const NEWGAME = {
     normal: { name: 'Normální', supplies: 1,   hunger: 1,    desc: 'Vyvážená hra.' },
     hard:   { name: 'Těžká',    supplies: 0.6, hunger: 1.15, desc: 'Méně zásob, rychlejší hlad, silnější nájezdy.' },
   },
-  defaults() { return { size: 'medium', water: 'normal', rock: 'normal', forest: 'normal', difficulty: 'normal', peaceful: false }; },
+  scenario: {
+    normal: { name: 'Klasický',   desc: 'Čtyři kolonisté na jaře na pevnině.' },
+    alone:  { name: 'Sám',        desc: 'Jediný všestranný kolonista s většími zásobami. Další se mohou přidat později.' },
+    winter: { name: 'Před zimou', desc: 'Start na konci podzimu – zima přijde druhý den. Víc jídla a dvoje teplé oblečení.' },
+    island: { name: 'Ostrov',     desc: 'Ostrov uprostřed moře: málo místa a dřeva, nájezdníci připlouvají jen ze břehu.' },
+  },
+  defaults() { return { size: 'medium', water: 'normal', rock: 'normal', forest: 'normal', difficulty: 'normal', peaceful: false, scenario: 'normal' }; },
 };
 
 // Typy terénu
@@ -893,10 +905,23 @@ const World = {
       oreN[i] = U.fbm(x / 5, y / 5, seed + 301, 2);
       this.variant[i] = (U.hash2(x, y, seed + 5) * 256) | 0;
     }
+    // ostrov: výška klesá k okrajům mapy
+    if (o.scenario === 'island') {
+      const R = 0.47 * w;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        const d = Math.hypot(x - w / 2, y - h / 2) / R;
+        elev[i] = elev[i] * 0.45 + Math.pow(U.clamp(1 - d, 0, 1), 0.8) * 0.75;
+      }
+    }
     // prahy podle kvantilů → stabilní složení mapy pro libovolné semínko
     const q = (arr, p) => { const s = Float32Array.from(arr).sort(); return s[Math.floor(p * (s.length - 1))]; };
-    const qw = NEWGAME.water[o.water];
-    const eWater = q(elev, qw), eShallow = q(elev, qw + 0.03), eSand = q(elev, qw + 0.06), eRock = q(elev, NEWGAME.rock[o.rock]);
+    const qw = o.scenario === 'island' ? 0.3 + NEWGAME.water[o.water] * 0.5 : NEWGAME.water[o.water];
+    const eWater = q(elev, qw), eShallow = q(elev, qw + 0.03), eSand = q(elev, qw + 0.06);
+    // hory: na ostrově se práh počítá jen ze souše, jinak by moře posunulo hory přes půl ostrova
+    const eRock = o.scenario === 'island'
+      ? q(elev.filter(e => e > eSand), Math.min(0.95, NEWGAME.rock[o.rock] + 0.08))
+      : q(elev, NEWGAME.rock[o.rock]);
     const mSoil = q(moist, 0.78), mDirt = q(moist, 0.08);
     const fTree = q(forest, NEWGAME.forest[o.forest]);
 
@@ -999,6 +1024,15 @@ const World = {
     const m = NEWGAME.difficulty[this.opts.difficulty].supplies;
     put(0, 'wood', 75); put(1, 'wood', Math.round(75 * Math.min(1, m))); put(2, 'wood', Math.round(30 * m));
     put(3, 'meal', Math.round(18 * m)); put(4, 'food', Math.round(30 * m)); put(5, 'stone', Math.round(20 * m));
+    if (this.opts.scenario === 'winter') {
+      put(6, 'meal', 40); put(7, 'coat', 2); put(8, 'wood', 75);
+      // hotové ohniště u tábora
+      for (const [dx, dy] of [[3, -2], [4, -2], [-3, -2], [3, 0]]) {
+        const i = this.idx(sx + dx, sy + dy);
+        if (this.walk[i] && !this.obj[i] && !this.zone[i]) { this.placeBlueprint(i, 'campfire'); this.completeBlueprint(i); break; }
+      }
+    }
+    if (this.opts.scenario === 'alone') { put(6, 'meal', 12); put(7, 'plank', 20); }
   },
 
   // ---------- Průchodnost ----------
@@ -1418,7 +1452,7 @@ const World = {
       for (const f of this.lights) {
         const s = this.struct[f];
         if (!s || !BUILD[s.type].heat) continue;
-        if (Math.abs((f % this.w) - x) <= 2 && Math.abs(((f / this.w) | 0) - y) <= 2) { t += 7; break; }
+        if (Math.abs((f % this.w) - x) <= 2 && Math.abs(((f / this.w) | 0) - y) <= 2) { t += 12; break; }
       }
     }
     return t;
@@ -3326,7 +3360,7 @@ const Jobs = (() => {
     const consider = (i) => {
       if (!World.walk[i] || World.struct[i] || (c.unreach.get('w' + i) || 0) > now) return;
       const d = Math.abs(ix(i) - c.tx) + Math.abs(iy(i) - c.ty);
-      if (d < bd && World.tempAt(i) >= 8) { bd = d; best = i; }
+      if (d < bd && World.tempAt(i) >= 5) { bd = d; best = i; }
     };
     for (const f of World.lights) {
       const s = World.struct[f];
@@ -4112,9 +4146,10 @@ const Jobs = (() => {
         j.stage = 1;
       }
       c.activity = 'Ohřívá se';
-      if (c.warmth >= 85 || (c.hunger < 15 && hasFood())) return DONE;
+      const tired = TimeSys.isNight() ? c.energy < 97 : c.energy < 30;
+      if ((c.warmth >= 85 && !tired) || (c.hunger < 15 && hasFood())) { c.sleeping = false; return DONE; }
       // v noci se vyspí rovnou tady
-      if (TimeSys.isNight() && c.energy < 80) { c.sleeping = true; c.activity = 'Spí u tepla'; c.energy = Math.min(100, c.energy + 100 / 9.5 * Config.HOURS_PER_TICK); }
+      if (tired) { c.sleeping = true; c.activity = 'Spí u tepla'; c.energy = Math.min(100, c.energy + 100 / 9.5 * Config.HOURS_PER_TICK); }
       else c.sleeping = false;
     },
 
@@ -5496,7 +5531,13 @@ class Colonist {
       Game.notifyOnce('nofood', 'Kolonisté nemají co jíst! Sbírejte bobule nebo založte pole.', 'warn', 180);
     }
     if (this.energy < 25 || (night && this.energy < 92)) {
-      this.startJob({ type: 'sleep', bed: Jobs.findBed(this) });
+      const bed = Jobs.findBed(this);
+      // bez postele v mrazu se vyspí u ohně
+      if (bed < 0 && !this.coat && TimeSys.temp() < 3) {
+        const w = Jobs.findWarmth(this);
+        if (w >= 0) { this.startJob({ type: 'warm', i: w }); return; }
+      }
+      this.startJob({ type: 'sleep', bed });
       return;
     }
     // vážně nemocný si lehne do postele
@@ -7742,7 +7783,7 @@ const UI = {
       m.innerHTML = `<div class="mbox"><div class="mhead"><b>Menu</b><button class="x" id="mClose">✕</button></div>
         <div class="menu">
           <button id="mBack">Pokračovat ve hře</button>
-          <button id="mSave">Uložit nyní</button>
+          <button id="mSave">Uložit / načíst pozice…</button>
           <button id="mExport">Exportovat hru do souboru</button>
           <button id="mImport">Importovat hru ze souboru</button>
           <button id="mAuto">Zrychlit čas, když všichni spí: <b class="${Game.autoFast ? 'on' : 'off'}">${Game.autoFast ? 'ZAP' : 'VYP'}</b></button>
@@ -7757,11 +7798,7 @@ const UI = {
       const close = () => m.classList.add('hidden');
       this.$('mClose').onclick = close;
       this.$('mBack').onclick = close;
-      this.$('mSave').onclick = () => {
-        close();
-        if (Save.store()) this.toast('Hra uložena.', 'good');
-        else this.toast('Uložení do prohlížeče selhalo – použij export do souboru.', 'warn');
-      };
+      this.$('mSave').onclick = () => { Save.store(); this.openSaves(); };
       this.$('mExport').onclick = () => { close(); Save.exportFile(); this.toast('Uložená hra se stahuje jako soubor.', 'good'); };
       this.$('mImport').onclick = () => { close(); this.$('importFile').click(); };
       this.$('mAuto').onclick = () => { Game.setAutoFast(!Game.autoFast); render(); };
@@ -7780,19 +7817,48 @@ const UI = {
   },
 
   /** Úvodní dotaz: pokračovat z uložené hry, nebo začít znovu. */
-  askContinue(saved) {
+  askContinue() {
     const m = this.$('modal');
-    const when = new Date(saved.savedAt).toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const rows = Save.list().filter(r => r.d);
     m.innerHTML = `<div class="mbox"><div class="mhead"><b>Kolonie</b></div>
-      <p>Nalezena uložená hra: <b class="on">${saved.label}</b><br><span class="mnote">${saved.colonists.map(c => c.first).join(', ')} · uloženo ${when}</span></p>
-      <div class="menu">
-        <button id="mCont">Pokračovat</button>
-        <button id="mNewGame">Nová kolonie</button>
-      </div></div>`;
+      <div class="saves">${rows.map(r => this.saveRow(r, false)).join('')}</div>
+      <div class="menu"><button id="mNewGame" class="primary">Nová kolonie</button></div></div>`;
     m.classList.remove('hidden');
     m.onclick = null;
-    this.$('mCont').onclick = () => Main.boot(saved);
-    this.$('mNewGame').onclick = () => this.openNewGame(() => this.askContinue(saved));
+    m.querySelectorAll('[data-load]').forEach(b => b.onclick = () => { const r = rows.find(q => q.slot === +b.dataset.load); Main.boot(r.d); });
+    this.$('mNewGame').onclick = () => this.openNewGame(() => this.askContinue());
+  },
+  saveRow(r, inGame) {
+    const d = r.d;
+    const when = d ? new Date(d.savedAt).toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    const sc = d && d.opts && d.opts.scenario && d.opts.scenario !== 'normal' ? ' · ' + NEWGAME.scenario[d.opts.scenario].name : '';
+    return `<div class="srow"><div><b>${r.name}</b><br>${d ? `<span class="on">${d.label}</span>${sc}<br><span class="mnote">${d.colonists.map(c => c.first).join(', ')} · ${when}</span>` : '<span class="mnote">prázdná</span>'}</div>
+      <div class="sbtns">${inGame && r.slot > 0 ? `<button data-store="${r.slot}">Uložit sem</button>` : ''}${d ? `<button data-load="${r.slot}">Načíst</button>` : ''}${inGame && r.slot > 0 && d ? `<button data-del="${r.slot}" class="del">✕</button>` : ''}</div></div>`;
+  },
+  /** Ukládání a načítání pozic za běhu hry. */
+  openSaves() {
+    const m = this.$('modal');
+    const render = () => {
+      const rows = Save.list();
+      m.innerHTML = `<div class="mbox wide"><div class="mhead"><b>Uložené hry</b><button class="x" id="mClose">✕</button></div>
+        <p class="mnote">Automatické uložení probíhá každou herní hodinu. Do pozic 1–${Save.SLOTS} ukládáš ručně – hodí se před riskantním krokem.</p>
+        <div class="saves">${rows.map(r => this.saveRow(r, true)).join('')}</div></div>`;
+      m.classList.remove('hidden');
+      this.$('mClose').onclick = () => m.classList.add('hidden');
+      m.querySelectorAll('[data-store]').forEach(b => b.onclick = () => {
+        const n = +b.dataset.store;
+        if (Save.peekSlot(n) && !confirm(`Přepsat pozici ${n}?`)) return;
+        if (Save.storeSlot(n)) this.toast(`Uloženo do pozice ${n}.`, 'good'); else this.toast('Uložení se nepodařilo – úložiště prohlížeče je plné nebo nedostupné.', 'warn');
+        render();
+      });
+      m.querySelectorAll('[data-load]').forEach(b => b.onclick = () => {
+        const r = rows.find(q => q.slot === +b.dataset.load);
+        if (confirm('Načíst tuto hru? Neuložený postup od posledního uložení se ztratí.')) Main.boot(r.d);
+      });
+      m.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { if (confirm('Smazat tuto pozici?')) { Save.clearSlot(+b.dataset.del); render(); } });
+    };
+    m.onclick = (e) => { if (e.target === m) m.classList.add('hidden'); };
+    render();
   },
 
   openHelp(first) {
@@ -7841,6 +7907,11 @@ const UI = {
         <li><b>Vztahy:</b> kolonisté se spřátelí nebo znesváří podle povah, společného času a jídla; najdeš je v kartě kolonisty.</li>
         <li><b>Přehled:</b> mapa s klepnutím pro skok kamery, graf zásob a seznam upozornění s tlačítkem Ukázat.</li>
         <li><b>Zvuk:</b> hlasitost a vypnutí jsou v Menu.</li>
+        <li><b>Plodiny:</b> klepni na pole a vyber brambory, kukuřici (jen v teple), zelí (snese mráz) nebo léčivé byliny.</li>
+        <li><b>Nemoci a zranění:</b> lékař (práce Lékař) ošetřuje nemocné a raněné – nejlépe s léky z Lékárny. Nemocní leží v posteli.</li>
+        <li><b>Skleník:</b> pole uvnitř vytápěné místnosti (ohniště nebo elektrické topení) roste i v zimě.</li>
+        <li><b>Cíl hry:</b> vyzkoumej Rádiové spojení, postav Vysílačku a dej jí 48 hodin energii – přiletí záchranná loď.</li>
+        <li><b>Uložené hry:</b> Menu → Uložit / načíst pozice – automatické uložení a 3 ruční pozice.</li>
       </ul>
       <h4>Přežití</h4>
       <ul>
@@ -7875,6 +7946,8 @@ const UI = {
     const render = () => {
       m.innerHTML = `<div class="mbox wide"><div class="mhead"><b>Nová kolonie</b>${onBack ? '<button class="x" id="mClose">✕</button>' : ''}</div>
         <div class="ng">
+          <label>Scénář</label>${seg('scenario', NEWGAME.scenario)}
+          <label></label><div class="mnote">${NEWGAME.scenario[st.opts.scenario].desc}</div>
           <label>Velikost mapy</label>${seg('size', NEWGAME.size)}
           <label>Voda</label>${seg('water', NEWGAME.amount)}
           <label>Hory</label>${seg('rock', NEWGAME.amount)}
@@ -7884,8 +7957,8 @@ const UI = {
           <label>Nájezdy</label><div class="seg"><button class="${!st.opts.peaceful ? 'on' : ''}" data-peace="0">Zapnuté</button><button class="${st.opts.peaceful ? 'on' : ''}" data-peace="1">Mírumilovný režim</button></div>
           <label>Semínko mapy</label><div class="seedrow"><input id="ngSeed" type="number" inputmode="numeric" placeholder="náhodné" value="${st.seed}"><button id="ngDice">Náhodné</button></div>
         </div>
-        <div class="psec">Kolonisté <button id="ngAll" class="mini-btn">Přelosovat všechny</button></div>
-        <div class="roster">${st.roster.map((c, k) => {
+        <div class="psec">${st.opts.scenario === 'alone' ? 'Kolonista' : 'Kolonisté'} <button id="ngAll" class="mini-btn">Přelosovat všechny</button></div>
+        <div class="roster">${st.roster.slice(0, st.opts.scenario === 'alone' ? 1 : 4).map((c, k) => {
           const top = Object.keys(c.skills).sort((a, b) => c.skills[b].lvl - c.skills[a].lvl).slice(0, 3).map(s => `${SKILLS[s]} ${c.skills[s].lvl}`).join(', ');
           return `<div class="rc"><img class="pix portrait" src="${Sprites.toURL(c.portrait, 4)}" alt=""><div><b>${c.name}</b>, ${c.age} let<br><i>${c.trait.name}</i> – ${c.trait.desc}<br><span class="mnote">${top}</span></div><button class="mini-btn" data-roll="${k}" title="Přelosovat">↻</button></div>`;
         }).join('')}</div>
@@ -8423,6 +8496,26 @@ const Save = {
   },
   clear() { try { localStorage.removeItem(this.KEY); } catch (e) { /* nic */ } },
 
+  // ---------- Ruční pozice ----------
+  SLOTS: 3,
+  slotKey(n) { return 'kolonie.slot' + n; },
+  storeSlot(n) {
+    try { localStorage.setItem(this.slotKey(n), JSON.stringify(this.serialize())); return true; }
+    catch (e) { this.lastError = e; return false; }
+  },
+  peekSlot(n) {
+    try { const d = JSON.parse(localStorage.getItem(this.slotKey(n))); return this.valid(d) ? d : null; }
+    catch (e) { return null; }
+  },
+  clearSlot(n) { try { localStorage.removeItem(this.slotKey(n)); } catch (e) { /* nic */ } },
+  /** Všechny uložené hry: automatická + ruční pozice. */
+  list() {
+    const out = [{ slot: 0, name: 'Automatické uložení', d: this.peek() }];
+    for (let n = 1; n <= this.SLOTS; n++) out.push({ slot: n, name: 'Pozice ' + n, d: this.peekSlot(n) });
+    return out;
+  },
+  any() { return this.list().some(s => s.d); },
+
   // ---------- Soubor ----------
   exportFile() {
     const d = this.serialize();
@@ -8500,7 +8593,17 @@ const Game = {
     this.shots = [];
     this.stats = { built: 0, chopped: 0, mined: 0, cooked: 0, harvested: 0, cropsEaten: 0, joined: 0, crafted: 0, machined: 0, deaths: [] };
     Fire.reset(); Animals.reset(); Power.reset(); Research.reset(); Pollution.reset();
-    this.colonists = roster ? placeRoster(roster, World.start) : createColonists(World.start);
+    const sc = World.opts.scenario;
+    if (sc === 'winter') TimeSys.minutes = (Config.SEASON_DAYS * 3 - 1) * 1440 + 7 * 60;   // poslední den podzimu
+    TimeSys.lastHour = Math.floor(TimeSys.hour);
+    let crew = roster ? roster.slice() : createColonists(World.start);
+    if (sc === 'alone') {
+      crew = crew.slice(0, 1);
+      // samotář umí od všeho trochu
+      for (const k in crew[0].skills) crew[0].skills[k].lvl = Math.max(crew[0].skills[k].lvl, 5);
+      for (const w of WORK_TYPES) crew[0].priorities[w.id] = w.id === 'research' || w.id === 'haul' ? 3 : 2;
+    }
+    this.colonists = roster ? placeRoster(crew, World.start) : crew;
     this.nextId = this.colonists.length;
     Quests.reset();
     Weather.reset();
@@ -8805,8 +8908,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ?seed=… spustí rovnou novou hru s výchozím nastavením (vývoj a testy)
   if (params.has('seed')) { Main.boot(null, parseInt(params.get('seed'), 10) || 1); return; }
   document.getElementById('loading').classList.add('hidden');
-  const saved = Save.peek();
-  if (saved) UI.askContinue(saved);
+  if (Save.any()) UI.askContinue();
   else UI.openNewGame();
 });
 
