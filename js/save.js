@@ -138,6 +138,7 @@ const Save = {
     for (const i of w.farm) W.zone[i] = 2;
     for (const i of w.pasture || []) W.zone[i] = 3;
     W.rebuildIndex();
+    Renderer.clearChunks();
 
     Game.res.clear(); Game.itemRes.clear();
     for (const k in Game.resType) Game.resType[k] = 0;

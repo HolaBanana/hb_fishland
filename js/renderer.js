@@ -41,13 +41,25 @@ const Renderer = {
   },
   /** Obrázek otočený o dir×90° (vejde se do stejného obdélníku; u lichého směru se prohodí rozměry). */
   imgRot(im, wx, wy, ww, wh, dir) {
-    if (!dir) { this.img(im, wx, wy, ww, wh); return; }
-    const ctx = this.ctx, x0 = this.X(wx), y0 = this.Y(wy), w = this.X(wx + ww) - x0, h = this.Y(wy + wh) - y0;
-    ctx.save();
-    ctx.translate(x0 + w / 2, y0 + h / 2);
-    ctx.rotate(dir * Math.PI / 2);
-    if (dir & 1) ctx.drawImage(im, -h / 2, -w / 2, h, w); else ctx.drawImage(im, -w / 2, -h / 2, w, h);
-    ctx.restore();
+    this.img(dir ? this.rotated(im, dir) : im, wx, wy, ww, wh);
+  },
+  /** Sprite otočený o dir×90° – předpočítá se jednou a uloží (rotace při každém snímku je drahá). */
+  rotCache: new WeakMap(),
+  rotated(im, dir) {
+    let r = this.rotCache.get(im);
+    if (!r) { r = []; this.rotCache.set(im, r); }
+    if (!r[dir]) {
+      if (!dir) return im;
+      const c = document.createElement('canvas');
+      c.width = dir & 1 ? im.height : im.width; c.height = dir & 1 ? im.width : im.height;
+      const g = c.getContext('2d');
+      g.imageSmoothingEnabled = false;
+      g.translate(c.width / 2, c.height / 2);
+      g.rotate(dir * Math.PI / 2);
+      g.drawImage(im, -im.width / 2, -im.height / 2);
+      r[dir] = c;
+    }
+    return r[dir];
   },
   /** Rozměr stavby ve světových pixelech podle otočení. */
   sizeOf(type, dir) {
@@ -59,8 +71,8 @@ const Renderer = {
   buildSprite(type, wx, wy, dir) {
     const def = BUILD[type], [fw, fh] = this.sizeOf(type, dir);
     if (def.machine && def.machine.belt) {
-      this.imgRot(Sprites.build[type], wx, wy, fw, fh, dir);
-      if (!def.machine.kind) this.imgRot(Sprites.beltArrow[Game.speed > 0 ? Math.floor(this.time * 6) % 3 : 0], wx, wy, fw, fh, dir);
+      const frame = def.machine.kind ? -1 : (Game.speed > 0 ? Math.floor(this.time * 6) % 3 : 0);
+      this.img(this.beltSprite(type, dir, frame), wx, wy, fw, fh);
     } else if (def.size) this.imgRot(Sprites.build[type], wx, wy, fw, fh, dir & 1);
     else this.img(Sprites.build[type], wx, wy, fw, fh);
     if (def.rot && def.machine && !def.machine.belt) this.imgRot(Sprites.arrow, wx + 4, wy + 4, 8, 8, dir);
@@ -117,7 +129,7 @@ const Renderer = {
       for (let x = tx0; x <= tx1; x++) {
         const i = y * W + x, wx = x * TS, wy = y * TS;
         const ter = World.terrain[i];
-        if ((ter === T.WATER || ter === T.SHALLOW) && Camera.zoom > 1.4) {
+        if ((ter === T.WATER || ter === T.SHALLOW) && Camera.zoom > 1.4 && World.variant[i] % 3 === 0) {
           const h = U.hash2(x, y, 3);
           const a = Math.sin(t * 1.6 + h * 12);
           if (a > 0.6) this.rect(wx + 2 + h * 9, wy + 3 + (h * 37 % 9), 4, 1, `rgba(200,230,255,${(a - 0.6) * 0.8})`);
@@ -193,7 +205,7 @@ const Renderer = {
       }
       if (bs && BUILD[bs.type].storage) continue;   // obsah truhly není vidět
       this.img(Sprites.items[it.type], wx + 1, wy, 14, 14);
-      if (Camera.zoom >= 1.6) {
+      if (Camera.zoom >= 2.2) {
         const s = String(it.n);
         const px = this.X(wx + TS - 0.5), py = this.Y(wy + TS + 0.5);
         ctx.fillStyle = 'rgba(0,0,0,0.8)';
@@ -228,8 +240,64 @@ const Renderer = {
   },
 
   // ---------- Řádkové vykreslení (správné překrývání stromů, zdí, kolonistů) ----------
+  // ---------- Mezipaměť přírodních objektů (stromy, keře, skály) ----------
+  // Při oddálení se kreslí po blocích 16×16 políček předkreslených do plátna;
+  // blok se překreslí jen po změně (pokácení, vytěžení, růst stromu, bobule).
+  CHUNK: 16,
+  CHUNK_MAX: 140,
+  chunks: new Map(),
+  clearChunks() { this.chunks = new Map(); },
+  dirtyTile(i) {
+    const C = this.CHUNK, x = i % World.w, y = (i / World.w) | 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const cx = Math.floor((x + dx) / C), cy = Math.floor((y + dy) / C);
+      const c = this.chunks.get(cx + ',' + cy);
+      if (c) c.dirty = true;
+    }
+  },
+  chunkCanvas(cx, cy, k) {
+    const key = cx + ',' + cy;
+    let c = this.chunks.get(key);
+    if (c && c.k === k && !c.dirty) { this.chunks.delete(key); this.chunks.set(key, c); return c; }
+    const TS = Config.TILE, C = this.CHUNK, mx = 4, mt = 16, mb = 4;
+    const ww = C * TS + mx * 2, wh = C * TS + mt + mb;
+    if (!c || c.k !== k) {
+      c = { cv: document.createElement('canvas'), k, wx: cx * C * TS - mx, wy: cy * C * TS - mt, ww, wh };
+      c.cv.width = Math.ceil(ww * k); c.cv.height = Math.ceil(wh * k);
+    }
+    const g = c.cv.getContext('2d');
+    g.clearRect(0, 0, c.cv.width, c.cv.height);
+    g.imageSmoothingEnabled = false;
+    // vykreslit objekty bloku přes běžné kreslicí funkce do plátna bloku
+    const save = [this.ctx, this.ox, this.oy, this.z];
+    this.ctx = g; this.z = k; this.ox = -c.wx * k; this.oy = -c.wy * k;
+    const W = World.w;
+    for (let y = cy * C; y < Math.min(World.h, (cy + 1) * C); y++) for (let x = cx * C; x < Math.min(World.w, (cx + 1) * C); x++) {
+      const o = World.obj[y * W + x];
+      if (o) this.drawObj(o, y * W + x, x, y, x * TS, y * TS);
+    }
+    [this.ctx, this.ox, this.oy, this.z] = save;
+    c.dirty = false;
+    this.chunks.delete(key); this.chunks.set(key, c);
+    while (this.chunks.size > this.CHUNK_MAX) this.chunks.delete(this.chunks.keys().next().value);
+    return c;
+  },
+  drawChunks(tx0, ty0, tx1, ty1) {
+    const C = this.CHUNK, k = this.z >= 1 ? 1 : 0.5;
+    const cy0 = Math.floor(ty0 / C), cy1 = Math.floor(Math.min(World.h - 1, ty1 + 1) / C);
+    const cx0 = Math.floor(tx0 / C), cx1 = Math.floor(tx1 / C);
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+      const c = this.chunkCanvas(cx, cy, k);
+      const x0 = this.X(c.wx), y0 = this.Y(c.wy);
+      this.ctx.drawImage(c.cv, x0, y0, this.X(c.wx + c.ww) - x0, this.Y(c.wy + c.wh) - y0);
+    }
+  },
+
   drawRows(tx0, ty0, tx1, ty1) {
     const TS = Config.TILE, W = World.w;
+    // oddáleno: přírodní objekty z mezipaměti, pořadí s kolonisty není při malém měřítku poznat
+    const cached = Camera.zoom < 2.2;
+    if (cached) this.drawChunks(tx0, ty0, tx1, ty1);
     const byRow = new Map();
     for (const c of Game.colonists) {
       const r = Math.floor(c.y);
@@ -241,7 +309,7 @@ const Renderer = {
       for (let x = tx0; x <= tx1; x++) {
         const i = y * W + x, wx = x * TS, wy = y * TS;
         const o = World.obj[i];
-        if (o) this.drawObj(o, i, x, y, wx, wy);
+        if (o && !cached) this.drawObj(o, i, x, y, wx, wy);
         const s = World.struct[i];
         if (s && s.i === i && !(BUILD[s.type].machine && (BUILD[s.type].machine.belt || BUILD[s.type].machine.rail || BUILD[s.type].machine.stop))) this.drawStruct(s, i, x, y, wx, wy);
         const bp = World.bp[i];
@@ -337,12 +405,9 @@ const Renderer = {
   drawStruct(s, i, x, y, wx, wy) {
     const TS = Config.TILE, def = BUILD[s.type];
     if (def.wall) {
-      this.img(Sprites.build[s.type], wx, wy, TS, TS);
       const isWall = (xx, yy) => { if (!World.inb(xx, yy)) return false; const q = World.struct[yy * World.w + xx]; return !!q && (BUILD[q.type].wall || BUILD[q.type].door); };
-      if (!isWall(x, y + 1)) { this.rect(wx, wy + TS - 4, TS, 4, 'rgba(0,0,0,0.35)'); this.rect(wx, wy + TS, TS, 3, 'rgba(0,0,0,0.22)'); }
-      if (!isWall(x, y - 1)) this.rect(wx, wy, TS, 1.5, 'rgba(255,255,255,0.25)');
-      if (!isWall(x - 1, y)) this.rect(wx, wy, 1, TS, 'rgba(0,0,0,0.3)');
-      if (!isWall(x + 1, y)) this.rect(wx + TS - 1, wy, 1, TS, 'rgba(0,0,0,0.3)');
+      const mask = (isWall(x, y - 1) ? 1 : 0) | (isWall(x + 1, y) ? 2 : 0) | (isWall(x, y + 1) ? 4 : 0) | (isWall(x - 1, y) ? 8 : 0);
+      this.img(this.wallSprite(s.type, mask), wx, wy, TS, TS + 3);
     } else if (def.door) {
       const open = Game.colonists.some(c => Math.abs(c.x - (x + 0.5)) < 1 && Math.abs(c.y - (y + 0.5)) < 1);
       this.img(open ? Sprites.build.door_open : Sprites.build[s.type], wx, wy, TS, TS);
@@ -419,15 +484,49 @@ const Renderer = {
     else if (m.power && s.want && !s.on) icon = '⚡';
     else if (m.gen === 'boiler' && !(s.burn > 0) && !(s.inv.wood >= 1)) { icon = '!'; col = '#ffb347'; }
     else if (m.turret && !(s.inv.ammo >= 1)) { icon = '!'; col = '#ffb347'; }
-    if (icon && Math.sin(t * 5) > -0.3) {
-      ctx.font = `bold ${Math.round(9 * this.z)}px VT323, monospace`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      const x = this.X(wx + fw / 2), y = this.Y(wy + fh / 2 - 2);
-      ctx.fillStyle = 'rgba(0,0,0,0.75)';
-      ctx.fillRect(x - 5 * this.z, y - 5 * this.z, 10 * this.z, 10 * this.z);
-      ctx.fillStyle = col;
-      ctx.fillText(icon, x, y);
-    }
+    if (icon && Math.sin(t * 5) > -0.3) this.img(this.iconSprite(icon, col), wx + fw / 2 - 5, wy + fh / 2 - 7, 10, 10);
+  },
+  /** Stavová ikona stroje předkreslená do obrázku (text na plátně je drahý). */
+  iconCache: {},
+  iconSprite(icon, col) {
+    const key = icon + col;
+    if (this.iconCache[key]) return this.iconCache[key];
+    const c = document.createElement('canvas'), S = 40;
+    c.width = S; c.height = S;
+    const g = c.getContext('2d');
+    g.fillStyle = 'rgba(0,0,0,0.75)'; g.fillRect(0, 0, S, S);
+    g.font = `bold ${S - 4}px VT323, monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = col; g.fillText(icon, S / 2, S / 2 + 1);
+    return (this.iconCache[key] = c);
+  },
+
+  /** Zeď se stíny a světly podle sousedních zdí – 16 variant na materiál, předkreslené. */
+  wallCache: {},
+  wallSprite(type, mask) {
+    const key = type + mask;
+    if (this.wallCache[key]) return this.wallCache[key];
+    const c = document.createElement('canvas');
+    c.width = 16; c.height = 19;
+    const g = c.getContext('2d');
+    g.drawImage(Sprites.build[type], 0, 0);
+    const r = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(x, y, w, h); };
+    if (!(mask & 4)) { r(0, 12, 16, 4, 'rgba(0,0,0,0.35)'); r(0, 16, 16, 3, 'rgba(0,0,0,0.22)'); }
+    if (!(mask & 1)) r(0, 0, 16, 1.5, 'rgba(255,255,255,0.25)');
+    if (!(mask & 8)) r(0, 0, 1, 16, 'rgba(0,0,0,0.3)');
+    if (!(mask & 2)) r(15, 0, 1, 16, 'rgba(0,0,0,0.3)');
+    return (this.wallCache[key] = c);
+  },
+  /** Pás se šipkou v jedné fázi animace a jednom směru – předkreslené. */
+  beltCache: {},
+  beltSprite(type, dir, frame) {
+    const key = type + dir + '_' + frame;
+    if (this.beltCache[key]) return this.beltCache[key];
+    const c = document.createElement('canvas');
+    c.width = 16; c.height = 16;
+    const g = c.getContext('2d');
+    g.drawImage(this.rotated(Sprites.build[type], dir) || Sprites.build[type], 0, 0);
+    if (frame >= 0) g.drawImage(dir ? this.rotated(Sprites.beltArrow[frame], dir) : Sprites.beltArrow[frame], 0, 0);
+    return (this.beltCache[key] = c);
   },
 
   drawFlame(cx, cy) {

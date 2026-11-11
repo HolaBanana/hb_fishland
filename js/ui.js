@@ -456,6 +456,7 @@ const UI = {
           <button id="mAuto">Zrychlit čas, když všichni spí: <b class="${Game.autoFast ? 'on' : 'off'}">${Game.autoFast ? 'ZAP' : 'VYP'}</b></button>
           <button id="mMute">Zvuk: <b class="${Sound.muted ? 'off' : 'on'}">${Sound.muted ? 'VYP' : 'ZAP'}</b></button>
           <div class="volrow"><span>Hlasitost</span><button id="mVolDn">−</button><b>${Math.round(Sound.volume * 100)} %</b><button id="mVolUp">+</button></div>
+          <button id="mLow">Šetřit baterii (30 snímků/s): <b class="${Game.lowPower ? 'on' : 'off'}">${Game.lowPower ? 'ZAP' : 'VYP'}</b></button>
           <button id="mPeace">Mírumilovný režim (bez nájezdů): <b class="${Game.peaceful ? 'on' : 'off'}">${Game.peaceful ? 'ZAP' : 'VYP'}</b></button>
           <button id="mHelp">Nápověda a ovládání</button>
           <button id="mNew">Nová kolonie (nová mapa)</button>
@@ -473,6 +474,7 @@ const UI = {
       this.$('mImport').onclick = () => { close(); this.$('importFile').click(); };
       this.$('mAuto').onclick = () => { Game.setAutoFast(!Game.autoFast); render(); };
       this.$('mPeace').onclick = () => { Game.setPeaceful(!Game.peaceful); render(); };
+      this.$('mLow').onclick = () => { Game.setLowPower(!Game.lowPower); render(); };
       this.$('mMute').onclick = () => { Sound.setMuted(!Sound.muted); render(); };
       this.$('mVolDn').onclick = () => { Sound.setVolume(Sound.volume - 0.1); Sound.play('ui_info'); render(); };
       this.$('mVolUp').onclick = () => { Sound.setVolume(Sound.volume + 0.1); Sound.play('ui_info'); render(); };

@@ -253,9 +253,12 @@ const World = {
   },
 
   // ---------- Objekty ----------
+  /** Změna vzhledu přírodního objektu → obnovit mezipaměť vykreslování. */
+  touchObj(i) { if (typeof Renderer !== 'undefined' && Renderer.dirtyTile) Renderer.dirtyTile(i); },
   removeObj(i) {
     const o = this.obj[i];
     if (!o) return;
+    this.touchObj(i);
     this.obj[i] = null;
     this.desSet.delete(i);
     if (o.des) this.des[o.des].delete(i);
@@ -639,10 +642,10 @@ const World = {
     for (const i of this.bushSet) {
       const o = this.obj[i];
       if (!o) continue;
-      if (winter) { o.berries = false; o.regrow = Math.max(o.regrow, 6); }   // v zimě keře neplodí
+      if (winter) { if (o.berries) this.touchObj(i); o.berries = false; o.regrow = Math.max(o.regrow, 6); }   // v zimě keře neplodí
       else if (!o.berries) {
         o.regrow -= hours * (0.5 + light * 0.5);
-        if (o.regrow <= 0) o.berries = true;
+        if (o.regrow <= 0) { o.berries = true; this.touchObj(i); }
       }
     }
     // vzácně vyroste nový stromek
@@ -655,13 +658,18 @@ const World = {
         const s = this.start;
         if (Math.hypot(x - s.x, y - s.y) > 14) {
           this.obj[i] = { type: 'tree', des: null, size: 0.55 };
+          this.touchObj(i);
           this.recalc(i);
         }
       }
     }
     for (let i = 0; i < this.n; i++) {
       const o = this.obj[i];
-      if (o && o.type === 'tree' && o.size < 1) o.size = Math.min(1, o.size + hours * Config.TREE_GROW_PER_HOUR);
+      if (o && o.type === 'tree' && o.size < 1) {
+        const before = Math.round(o.size * 20);
+        o.size = Math.min(1, o.size + hours * Config.TREE_GROW_PER_HOUR);
+        if (Math.round(o.size * 20) !== before) this.touchObj(i);
+      }
     }
   },
 

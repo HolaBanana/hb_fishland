@@ -37,7 +37,10 @@ const Main = {
 
 window.addEventListener('DOMContentLoaded', () => {
   const params = Main.params = new URLSearchParams(location.search);
-  try { Game.autoFast = localStorage.getItem('kolonie.autoFast') === '1'; } catch (e) { /* bez úložiště */ }
+  try {
+    Game.autoFast = localStorage.getItem('kolonie.autoFast') === '1';
+    Game.lowPower = localStorage.getItem('kolonie.lowPower') === '1';
+  } catch (e) { /* bez úložiště */ }
   Sound.load();
   // zvuk smí začít až po prvním dotyku nebo stisku klávesy
   const wake = () => Sound.start();

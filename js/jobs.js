@@ -925,6 +925,7 @@ const Jobs = (() => {
       if (o.amount <= 0) World.removeObj(i);
     } else if (o.type === 'bush') {
       o.berries = false;
+      World.touchObj(i);
       o.regrow = Config.BUSH_REGROW_HOURS; // označení zůstává → po dorůstání se sklidí znovu
       World.dropItem(x, y, 'food', U.int(4, 6));
     }

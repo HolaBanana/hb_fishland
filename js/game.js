@@ -37,6 +37,7 @@ const Game = {
     this.history = [];
     Pathfinder.init(World.w, World.h);
     Sprites.buildTerrain();
+    if (Renderer.clearChunks) Renderer.clearChunks();
     this.res.clear(); this.itemRes.clear(); this.notified.clear();
     for (const k of ITEM_KEYS) this.resType[k] = 0;
     this.tickCount = 0; this.pending = null;
@@ -207,6 +208,10 @@ const Game = {
     if (this.opts) this.opts.peaceful = !!on;
     if (on && Combat.raiders.length) { for (const r of Combat.raiders) r.flee(); }
   },
+  setLowPower(on) {
+    this.lowPower = !!on;
+    try { localStorage.setItem('kolonie.lowPower', on ? '1' : '0'); } catch (e) { /* bez úložiště */ }
+  },
   setAutoFast(on) {
     this.autoFast = !!on;
     try { localStorage.setItem('kolonie.autoFast', on ? '1' : '0'); } catch (e) { /* bez úložiště */ }
@@ -261,7 +266,7 @@ const Game = {
 
   start() {
     let last = performance.now();
-    let uiT = 0;
+    let uiT = 0, frame = 0, drawDt = 0;
     const loop = (now) => {
       const dt = U.clamp((now - last) / 1000, 0, 0.1);
       last = now;
@@ -271,7 +276,9 @@ const Game = {
       if (steps >= 16) this.acc = 0;
       Input.update(dt);
       Camera.update();
-      Renderer.draw(dt);
+      // úsporný režim: kreslit jen každý druhý snímek (~30 snímků/s)
+      drawDt += dt;
+      if (!this.lowPower || (frame++ & 1) === 0) { Renderer.draw(drawDt); drawDt = 0; }
       uiT += dt;
       if (uiT > 0.25) { uiT = 0; UI.update(); Sound.update(); if (!this.over) Quests.check(); }
       requestAnimationFrame(loop);
