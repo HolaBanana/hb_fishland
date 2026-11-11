@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1b1712">
+  <title>Kolonie – budovatelská survival hra</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="topbar">
+    <div id="clock" class="panel">
+      <span id="sunIcon">☀️</span>
+      <span id="dayLabel">Den 1</span>
+      <span id="timeLabel">07:00</span>
+      <span id="weatherLabel"></span>
+      <span id="seasonLabel"></span>
+    </div>
+    <div id="resources" class="panel"></div>
+    <div id="speed" class="panel"></div>
+  </div>
+
+  <div id="colonistBar"></div>
+  <div id="infoPanel" class="panel hidden"></div>
+  <div id="quest" class="panel hidden"></div>
+  <canvas id="minimap" width="120" height="120" class="hidden"></canvas>
+  <div id="toasts"></div>
+  <div id="pausedBadge">PAUZA</div>
+  <div id="fastBadge">▶▶ Všichni spí – čas zrychlen</div>
+  <input type="file" id="importFile" accept=".json,application/json" class="hidden">
+
+  <div id="bottom">
+    <div id="actionRow">
+      <div id="toolHint" class="panel hidden"><span id="hintText"></span><button id="rotBtn" class="cbtn hidden" title="Otočit stavbu (R)">⟳ →</button><button id="hintClose" class="x">✕</button></div>
+      <div id="confirmBar" class="panel hidden">
+        <span id="confirmText"></span>
+        <button id="confirmOk" class="cbtn ok">✔ Potvrdit</button>
+        <button id="confirmNo" class="cbtn no">✕ Zrušit</button>
+      </div>
+      <button id="undoBtn" class="panel hidden" title="Vrátit poslední akci (Ctrl+Z)">↶ Zpět</button>
+    </div>
+    <div id="toolRow"></div>
+    <div id="tabRow"></div>
+  </div>
+
+  <div id="modal" class="hidden"></div>
+  <div id="loading"><div>Generuji svět…</div></div>
+
+  <script src="js/utils.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/pathfinding.js"></script>
+  <script src="js/time.js"></script>
+  <script src="js/crops.js"></script>
+  <script src="js/medicine.js"></script>
+  <script src="js/fire.js"></script>
+  <script src="js/machines.js"></script>
+  <script src="js/power.js"></script>
+  <script src="js/research.js"></script>
+  <script src="js/pollution.js"></script>
+  <script src="js/trade.js"></script>
+  <script src="js/combat.js"></script>
+  <script src="js/carts.js"></script>
+  <script src="js/social.js"></script>
+  <script src="js/sound.js"></script>
+  <script src="js/quests.js"></script>
+  <script src="js/jobs.js"></script>
+  <script src="js/sprites.js"></script>
+  <script src="js/colonist.js"></script>
+  <script src="js/animals.js"></script>
+  <script src="js/events.js"></script>
+  <script src="js/camera.js"></script>
+  <script src="js/tools.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/save.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
