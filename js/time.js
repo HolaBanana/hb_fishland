@@ -17,7 +17,7 @@ const TimeSys = {
       if (h === 6) {
         UI.toast(`Svítá – začíná ${this.day}. den.`, 'info');
         if ((this.day - 1) % Config.SEASON_DAYS === 0 && this.day > 1) {
-          const msg = ['Přišlo jaro. Pole se dají znovu osít.', 'Začíná léto.', 'Začíná podzim. Zima přijde za ' + Config.SEASON_DAYS + ' dny – udělej zásoby jídla!', 'Přišla zima! Plodiny nerostou a keře neplodí.'][this.season];
+          const msg = ['Přišlo jaro. Pole se dají znovu osít.', 'Začíná léto.', 'Začíná podzim. Zima přijde za ' + Config.SEASON_DAYS + ' dny – udělej zásoby jídla a postav vytápěnou místnost (zdi, dveře, ohniště uvnitř)!', 'Přišla zima! Plodiny nerostou a keře neplodí.'][this.season];
           UI.toast(msg, this.season === 3 ? 'warn' : 'good');
         }
       }

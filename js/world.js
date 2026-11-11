@@ -505,6 +505,13 @@ const World = {
       if (back > 0) this.dropItem(x, y, m, back);
     }
   },
+  /** Zničenou stavbu (nájezd, požár) naplánuje znovu na stejném místě. */
+  replan(s) {
+    if (!s || (BUILD[s.type].tech && !Research.has(BUILD[s.type].tech))) return;
+    const tiles = this.footprint(s.i, s.type, s.dir || 0);
+    if (!tiles || tiles.some(t => this.struct[t] || this.bp[t] || this.obj[t])) return;
+    this.placeBlueprint(s.i, s.type, s.dir || 0);
+  },
   /** Odstraní stavbu bez náhrady (bourání, požár). Obsah truhly vysype ven. */
   destroyStruct(i) {
     const s = this.struct[i];

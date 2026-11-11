@@ -100,6 +100,24 @@ const Jobs = (() => {
     }
     return best;
   }
+  /** Nejbližší teplé místo: políčko u ohniště nebo ve vytápěné místnosti (aspoň 8 °C). */
+  function findWarmth(c) {
+    let best = -1, bd = Infinity;
+    const W = World.w, now = TimeSys.minutes;
+    const consider = (i) => {
+      if (!World.walk[i] || World.struct[i] || (c.unreach.get('w' + i) || 0) > now) return;
+      const d = Math.abs(ix(i) - c.tx) + Math.abs(iy(i) - c.ty);
+      if (d < bd && World.tempAt(i) >= 8) { bd = d; best = i; }
+    };
+    for (const f of World.lights) {
+      const s = World.struct[f];
+      if (!s || !BUILD[s.type].heat) continue;
+      const room = World.roomAt(f);
+      if (room) { for (let k = 0; k < room.tiles.length; k += 3) consider(room.tiles[k]); }
+      else for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (World.inb(ix(f) + dx, iy(f) + dy)) consider(f + dy * W + dx);
+    }
+    return best;
+  }
   /** Volná židle u stolu poblíž. */
   function findSeat(c) {
     const chairs = World.structBy.chair, w = World.w;
@@ -815,6 +833,22 @@ const Jobs = (() => {
       }
     },
 
+    /** Ohřívání u ohně / ve vytápěné místnosti, dokud se kolonista nezahřeje. */
+    warm(c, j) {
+      if (j.stage === 0) {
+        c.activity = 'Jde se ohřát';
+        const r = walk(c, j, ix(j.i), iy(j.i), 0, 'w' + j.i);
+        if (r === 'fail') return FAIL;
+        if (r === 'moving') return;
+        j.stage = 1;
+      }
+      c.activity = 'Ohřívá se';
+      if (c.warmth >= 85 || (c.hunger < 15 && hasFood())) return DONE;
+      // v noci se vyspí rovnou tady
+      if (TimeSys.isNight() && c.energy < 80) { c.sleeping = true; c.activity = 'Spí u tepla'; c.energy = Math.min(100, c.energy + 100 / 9.5 * Config.HOURS_PER_TICK); }
+      else c.sleeping = false;
+    },
+
     /** Hašení požáru – dělá ho každý bez ohledu na priority. */
     firefight(c, j) {
       const i = j.i;
@@ -933,5 +967,5 @@ const Jobs = (() => {
     return DONE;
   }
 
-  return { DONE, FAIL, drivers, findWork, findFood, hasFood, findBed, findFire, findSeat, nearestItem, anyItem, candidates };
+  return { DONE, FAIL, drivers, findWork, findFood, hasFood, findBed, findFire, findSeat, findWarmth, nearestItem, anyItem, candidates };
 })();

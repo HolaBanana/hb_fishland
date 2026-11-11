@@ -34,6 +34,7 @@ const Fire = {
     if (s && BUILD[s.type].burns) {
       Game.alert(`Shořela stavba: ${BUILD[s.type].name.toLowerCase()}.`, 'warn', x, y);
       World.destroyStruct(i);
+      World.replan(s);
     }
     const f = World.floor[i];
     if (f && BUILD[f.type].burns) { World.floor[i] = null; World.deconSet.delete(i); World.recalc(i); }

@@ -139,9 +139,10 @@ class Colonist {
     // tělesné teplo: bez teplého oblečení venku v mrazu ubývá, v teple se vrací
     const amb = World.tempAt(World.idx(this.tx, this.ty));
     const comfort = this.coat ? -14 : 3;
-    if (amb < comfort) this.warmth = Math.max(0, this.warmth - (comfort - amb) * 0.9 * hours);
+    if (amb < comfort) this.warmth = Math.max(0, this.warmth - (comfort - amb) * 0.5 * hours);
     else this.warmth = Math.min(100, this.warmth + (6 + (amb - comfort)) * 1.2 * hours);
-    if (this.warmth < 20) { d -= 3 * hours; cause = 'podchlazením'; }
+    if (this.warmth < 20) { d -= 2 * hours; cause = 'podchlazením'; }
+    if (this.warmth < 45 && amb < comfort) Game.notifyOnce('cold' + this.id, `${this.first} prochládá! Postav vytápěnou místnost (zdi, dveře, ohniště uvnitř) nebo ušij teplé oblečení.`, 'warn', 360);
     if (this.hunger <= 0) { d -= 4.5 * hours; cause = 'hladem'; }
     if (this.energy <= 0) { d -= 2 * hours; cause = cause || 'vyčerpáním'; }
     if (d === 0 && this.hunger > 30 && this.energy > 15) d = (this.sleeping ? 3 : 1.5) * hours;
@@ -256,6 +257,11 @@ class Colonist {
       const f = Jobs.findFire(this);
       if (f >= 0) { this.startJob({ type: 'firefight', i: f, key: 'f' + f }); return; }
     }
+    // prochladlý kolonista se jde ohřát (k ohni nebo do vytápěné místnosti)
+    if (this.warmth < 45 && World.tempAt(World.idx(this.tx, this.ty)) < (this.coat ? -14 : 3)) {
+      const w = Jobs.findWarmth(this);
+      if (w >= 0) { this.startJob({ type: 'warm', i: w }); return; }
+    }
     if (this.hunger < 30) {
       const f = Jobs.findFood(this);
       if (f >= 0) { this.startJob({ type: 'eat', i: f, key: 'e' + f + '_' + this.id }); return; }
@@ -289,7 +295,8 @@ class Colonist {
     // přerušení kvůli naléhavým potřebám
     if (this.job) {
       const t = this.job.type;
-      if (Combat.raiders.length && t !== 'fight' && t !== 'flee' && this.tickN % 15 === 0 &&
+      if (t !== 'warm' && t !== 'fight' && this.warmth < 25 && this.tickN === 0 && World.tempAt(World.idx(this.tx, this.ty)) < 3 && Jobs.findWarmth(this) >= 0) this.endJob();
+      else if (Combat.raiders.length && t !== 'fight' && t !== 'flee' && this.tickN % 15 === 0 &&
           (this.bow ? t !== 'eat' : !!Combat.nearest(this.x, this.y, 5))) this.endJob();
       else if (t !== 'eat' && t !== 'sleep' && t !== 'fight' && this.hunger < 12 && this.tickN === 0 && Jobs.findFood(this) >= 0) this.endJob();
       else if (t !== 'sleep' && this.energy <= 1) {

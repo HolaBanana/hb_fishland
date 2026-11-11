@@ -76,6 +76,7 @@ class Raider {
       const x = s.i % w, y = (s.i / w) | 0;
       Game.alert(`Nájezdníci zničili: ${BUILD[s.type].name.toLowerCase()}.`, 'warn', x, y);
       World.destroyStruct(s.i);
+      World.replan(s);   // kolonisté ji po odražení nájezdu postaví znovu
       Game.onTileChanged(x, y);
       this.breaking = -1;
     }
