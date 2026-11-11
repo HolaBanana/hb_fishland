@@ -42,6 +42,7 @@ const Game = {
     for (const k of ITEM_KEYS) this.resType[k] = 0;
     this.tickCount = 0; this.pending = null;
     this.over = false;
+    this.rescued = false;
     this.alerts = [];
     this.shots = [];
     this.stats = { built: 0, chopped: 0, mined: 0, cooked: 0, harvested: 0, cropsEaten: 0, joined: 0, crafted: 0, machined: 0, deaths: [] };
@@ -50,7 +51,7 @@ const Game = {
     this.nextId = this.colonists.length;
     Quests.reset();
     Weather.reset();
-    Events.reset(); Trade.reset(); Combat.reset(); Carts.reset();
+    Events.reset(); Trade.reset(); Combat.reset(); Carts.reset(); Medicine.reset();
     Camera.zoom = Config.ZOOM_DEFAULT;
     Camera.centerTile(World.start.x, World.start.y + 1);
   },
@@ -153,6 +154,13 @@ const Game = {
     if (this.alerts.length > 40) this.alerts.shift();
     UI.toast(msg, kind);
   },
+  /** Vysílačka dovysílala → záchranná loď přiletěla. Cíl hry splněn, hrát se dá dál. */
+  rescue(s) {
+    if (this.rescued) return;
+    this.rescued = true;
+    this.alert('Záchranná loď přistála! Kolonisté jsou zachráněni – cíl hry splněn.', 'good', s.i % World.w, (s.i / World.w) | 0);
+    UI.victory();
+  },
   /** Hodinový vzorek zásob pro graf (posledních 14 dní). */
   sample() {
     const row = { t: Math.round(TimeSys.minutes), n: Game.colonists.length };
@@ -248,7 +256,7 @@ const Game = {
     this.tickCount++;
     const hourBefore = TimeSys.lastHour;
     TimeSys.tick();
-    if (TimeSys.lastHour !== hourBefore) { this.sample(); Events.hourly(); Animals.hourly(); Trade.hourly(); Combat.hourly(); Social.hourly(); Save.auto(); }   // jednou za herní hodinu
+    if (TimeSys.lastHour !== hourBefore) { this.sample(); Events.hourly(); Animals.hourly(); Trade.hourly(); Combat.hourly(); Social.hourly(); Medicine.events(); Save.auto(); }   // jednou za herní hodinu
     Weather.tick();
     if (this.tickCount % 30 === 0) {
       const hours = 30 * Config.HOURS_PER_TICK;

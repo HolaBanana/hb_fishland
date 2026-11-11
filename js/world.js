@@ -18,7 +18,8 @@ const World = {
     this.crops = new Array(n).fill(null);   // {g}
     this.bp = new Array(n).fill(null);      // {type, del:{}, i, dir, tiles}
     this.zone = new Uint8Array(n);          // 0 nic, 1 sklad, 2 pole
-    this.filter = new Uint16Array(n);       // filtr surovin skladu (0 = vše)
+    this.filter = new Uint32Array(n);       // filtr surovin skladu (0 = vše)
+    this.cropKind = new Uint8Array(n);      // druh plodiny pole (index do CROP_KEYS)
     this.roof = new Uint8Array(n);          // 1 = pod střechou (uzavřená místnost)
     this.roomId = new Int16Array(n);        // index do rooms, -1 = venku
     this.rooms = [];
@@ -286,10 +287,31 @@ const World = {
   stackCap(i) { return this.isChest(i) ? Config.CHEST_STACK : Config.STACK; },
   /** Povoluje filtr skladu na políčku daný druh suroviny? */
   allowed(i, type) { const f = this.filter[i]; return !(f & FILTER_CUSTOM) || !!(f & ITEM_BIT[type]); },
+  /** Výkon topení v místnosti podle toho, zda mají energii. */
+  heaterHeat(room) {
+    let h = 0;
+    for (const s of room.heaters) if (!s.decon && !s.broken && Power.factor(s) > 0.05) h += BUILD[s.type].machine.heater * Power.factor(s);
+    return h;
+  },
   isBelt(i) { const s = this.struct[i]; return !!s && !!BUILD[s.type].machine && !!BUILD[s.type].machine.belt; },
   /** Leží hromádka „volně“ (mimo sklad nebo ve skladu, kam nepatří)? Na pásu ne. */
   isLoose(i) { const it = this.items[i]; return !!it && !this.isBelt(i) && (!this.isStock(i) || !this.allowed(i, it.type)); },
   /** Souvislý sklad (zóna) nebo jedna truhla, do které políčko patří. */
+  /** Souvislá oblast stejné zóny (4-sousedství). */
+  zoneRegion(i) {
+    const z = this.zone[i];
+    if (!z) return [];
+    const out = [i], seen = new Set([i]);
+    for (let h = 0; h < out.length; h++) {
+      const c = out[h], x = c % this.w, y = (c / this.w) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (!this.inb(x + dx, y + dy)) continue;
+        const q = this.idx(x + dx, y + dy);
+        if (!seen.has(q) && this.zone[q] === z) { seen.add(q); out.push(q); }
+      }
+    }
+    return out;
+  },
   stockRegion(i) {
     if (this.isChest(i)) return [i];
     if (this.zone[i] !== 1) return [];
@@ -394,8 +416,9 @@ const World = {
     for (const i of this.farmTiles) if (!this.crops[i]) this.emptyFarm.add(i);
     this.itemVer++;
   },
-  setCrop(i, g) {
-    this.crops[i] = { g };
+  cropType(i) { return CROP_KEYS[this.cropKind[i]] || 'potato'; },
+  setCrop(i, g, t) {
+    this.crops[i] = { g, t: t || this.cropType(i) };
     this.cropSet.add(i);
     this.emptyFarm.delete(i);
     if (g >= 1) this.ripeSet.add(i);
@@ -582,13 +605,15 @@ const World = {
         }
       }
       if (tiles.length > Config.ROOM_MAX) continue;
-      const room = { id: this.rooms.length, tiles, beds: [], heat: 0 };
+      const room = { id: this.rooms.length, tiles, beds: [], heat: 0, heaters: [] };
       for (const i of tiles) {
         this.roof[i] = 1; this.roomId[i] = room.id;
         const s = this.struct[i];
         if (s) {
           if (s.type === 'bed') room.beds.push(i);
           if (BUILD[s.type].heat) room.heat += BUILD[s.type].heat;
+          const hm = BUILD[s.type].machine;
+          if (hm && hm.heater && s.i === i) room.heaters.push(s);
         }
       }
       this.rooms.push(room);
@@ -615,7 +640,7 @@ const World = {
   tempAt(i) {
     let t = TimeSys.temp();
     const room = this.roomAt(i);
-    if (room) t += 5 + Math.min(22, room.heat);
+    if (room) t += 5 + Math.min(26, room.heat + this.heaterHeat(room));
     else {
       // venku hřeje oheň jen zblízka
       const x = i % this.w, y = (i / this.w) | 0;
@@ -633,16 +658,19 @@ const World = {
     if (this.roomsDirty) this.computeRooms();
     const light = TimeSys.daylight();
     const temp = TimeSys.temp(), winter = TimeSys.season === 3;
-    // v zimě a při mrazu plodiny nerostou
-    const warm = winter ? 0 : U.clamp((temp - 1) / 6, 0, 1);
-    const growMul = (0.15 + 0.85 * light) * (1 + Weather.rain * 0.35) * warm;
+    const growMul = (0.15 + 0.85 * light) * (1 + Weather.rain * 0.35);
     this.spoil(hours, temp);
     let matured = 0;
     for (const i of this.cropSet) {
       const c = this.crops[i];
       if (!c || c.g >= 1) continue;
       const fert = TERRAIN[this.terrain[i]].fert;
-      c.g += hours / Config.CROP_HOURS * fert * growMul * (1 - 0.7 * Math.min(1, Pollution.at(i)));
+      const cd = Crops.def(c.t);
+      // venku podle počasí a ročního období; skleník (pole v místnosti) podle teploty uvnitř, i v zimě
+      const mul = this.roof[i]
+        ? 0.65 * (0.4 + 0.6 * light) * Crops.growFactor(c.t, this.tempAt(i), true)
+        : growMul * Crops.growFactor(c.t, temp, false);
+      c.g += hours / cd.hours * fert * mul * (1 - 0.7 * Math.min(1, Pollution.at(i)));
       if (c.g >= 1) { c.g = 1; matured++; this.ripeSet.add(i); }
     }
     if (matured > 0) Game.notifyOnce('crop', `Úroda dozrála (${matured} polí) – kolonisté ji sklidí.`, 'good', 360);

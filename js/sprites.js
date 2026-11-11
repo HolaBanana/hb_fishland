@@ -327,6 +327,28 @@ const Sprites = (() => {
     S.items.ammo = outline(paint(16, 16, (set, get, rect) => {
       for (const x of [3, 7, 11]) { rect(x, 6, 2, 7, [196, 150, 60]); rect(x, 4, 2, 2, [150, 156, 168]); set(x, 6, [236, 200, 110]); }
     }));
+    S.items.parts = outline(paint(16, 16, (set, get, rect) => {
+      for (const [cx, cy] of [[5, 10], [11, 6]]) for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) {
+        const d = Math.hypot(x, y), a = Math.atan2(y, x);
+        if (d > 4.2 || d < 1.3) continue;
+        if (d > 3 && Math.cos(a * 8) < 0) continue;      // zuby ozubeného kola
+        set(cx + x, cy + y, x + y < 0 ? [196, 204, 216] : [120, 128, 140]);
+      }
+      rect(9, 11, 5, 2, [176, 126, 74]); set(13, 11, [120, 128, 140]);
+    }));
+    S.items.herbs = outline(paint(16, 16, (set) => {
+      for (let k = 0; k < 4; k++) {
+        const x0 = 4 + k * 2.5;
+        for (let y = 5; y < 14; y++) set(x0 + (y > 9 ? 0 : (k & 1)), y, [70, 120, 60]);
+        set(x0 - 1, 7 + k, [100, 160, 80]); set(x0 + 1, 9 - k % 2, [100, 160, 80]);
+        set(x0, 4, [170, 110, 210]); set(x0 + 1, 5, [200, 150, 230]);
+      }
+      for (let x = 3; x < 13; x++) set(x, 11, [176, 126, 74]);
+    }));
+    S.items.medicine = outline(paint(16, 16, (set, get, rect) => {
+      rect(4, 5, 8, 9, [236, 232, 220]); rect(4, 5, 8, 1, [250, 248, 240]); rect(6, 2, 4, 3, [176, 126, 74]);
+      rect(7, 7, 2, 5, [220, 60, 60]); rect(5, 9, 6, 1, [220, 60, 60]); rect(5, 9, 6, 2, [220, 60, 60]);
+    }));
     S.items.meal = outline(paint(16, 16, (set) => {
       for (let y = 7; y < 14; y++) for (let x = 2; x < 14; x++) {
         const dx = (x - 7.5) / 6, dy = (y - 8) / 6;
@@ -470,6 +492,43 @@ const Sprites = (() => {
     const metal = [120, 126, 138], metalL = [176, 184, 196], metalD = [72, 78, 90];
     const wood = [150, 104, 60], woodL = [186, 138, 86], woodD = [100, 66, 38];
     const stoneC = [140, 136, 130], stoneL = [176, 172, 164], stoneD = [92, 88, 84];
+    // ----- pozdní hra a lékárna -----
+    S.build.apothecary = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 3, 14, 13, [150, 104, 60]); rect(1, 3, 14, 1, [186, 138, 86]);
+      for (const y of [6, 10]) rect(2, y, 12, 1, [100, 66, 38]);
+      for (const [x, y, c] of [[3, 4, [120, 190, 120]], [6, 4, [200, 120, 220]], [10, 4, [236, 232, 220]], [4, 8, [220, 80, 80]], [8, 8, [150, 200, 230]], [11, 8, [120, 190, 120]]]) rect(x, y, 2, 2, c);
+      rect(3, 11, 10, 5, [176, 126, 74]); rect(7, 12, 2, 3, [220, 60, 60]); rect(6, 13, 4, 1, [220, 60, 60]);
+    }));
+    S.build.machineshop = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 7, 14, 5, metal); rect(1, 7, 14, 1, metalL); rect(1, 11, 14, 1, metalD);
+      rect(2, 12, 2, 4, metalD); rect(12, 12, 2, 4, metalD);
+      rect(9, 1, 2, 6, metalD); rect(7, 1, 6, 2, metal); rect(9, 5, 2, 2, [255, 220, 90]);
+      rect(2, 4, 5, 3, [120, 80, 44]); rect(3, 5, 3, 1, [200, 206, 216]);
+    }));
+    S.build.heater = outline(paint(16, 16, (set, get, rect) => {
+      rect(2, 3, 12, 12, metal); rect(2, 3, 12, 1, metalL); rect(2, 14, 12, 1, metalD);
+      for (let x = 4; x < 13; x += 2) rect(x, 5, 1, 8, [230, 110, 50]);
+      rect(11, 1, 2, 2, metalD);
+    }));
+    S.build.assembler = outline(paint(32, 16, (set, get, rect) => {
+      rect(1, 4, 30, 11, metal); rect(1, 4, 30, 1, metalL); rect(1, 14, 30, 1, metalD);
+      rect(3, 6, 26, 4, [58, 60, 68]);
+      for (let x = 4; x < 28; x += 6) { rect(x, 1, 2, 6, metalD); rect(x - 1, 6, 4, 2, [255, 220, 90]); }
+      rect(4, 11, 6, 2, [176, 126, 74]); rect(22, 11, 6, 2, [196, 204, 216]);
+    }));
+    S.build.harvester = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 4, 14, 9, [196, 150, 52]); rect(1, 4, 14, 1, [236, 196, 90]); rect(1, 12, 14, 1, [130, 96, 30]);
+      rect(9, 1, 5, 4, [70, 110, 150]); rect(10, 2, 3, 2, [160, 210, 240]);
+      for (let x = 1; x < 15; x += 2) set(x, 13, metalL);
+      for (const cx of [4, 12]) rect(cx - 2, 13, 4, 3, [50, 46, 44]);
+    }));
+    S.build.radio = outline(paint(32, 32, (set, get, rect) => {
+      rect(4, 22, 24, 10, [140, 136, 130]); rect(4, 22, 24, 1, [176, 172, 164]);
+      rect(8, 24, 8, 6, [58, 60, 68]); rect(9, 25, 2, 2, [126, 220, 126]); rect(12, 25, 2, 2, [255, 200, 80]);
+      for (let y = 2; y < 22; y++) { const w = Math.max(1, Math.floor((22 - y) / 5)); set(16 - w, y, metalD); set(16 + w, y, metalD); if (y % 4 === 0) rect(16 - w, y, w * 2 + 1, 1, metal); }
+      rect(15, 0, 3, 3, [230, 70, 60]);
+      for (let a = 0; a < 7; a++) { set(21 + a, 6 - Math.round(Math.sin(a / 2) * 2), metalL); }
+    }));
     S.build.saw = outline(paint(16, 16, (set, get, rect) => {
       rect(1, 7, 14, 5, wood); rect(1, 7, 14, 1, woodL); rect(1, 11, 14, 1, woodD);
       rect(2, 12, 2, 4, woodD); rect(12, 12, 2, 4, woodD);
@@ -614,6 +673,30 @@ const Sprites = (() => {
         set(x, y, col);
       }
     });
+    const make = (leaf, fruit, kind) => [0, 1, 2, 3].map(n => outline(paint(16, 16, (set) => {
+      const plants = [[4, 5], [11, 5], [4, 12], [11, 12]];
+      for (const [px, py] of plants) {
+        if (n === 0) { set(px, py, leaf[1]); set(px + 1, py - 1, leaf[2]); continue; }
+        if (kind === 'corn') {
+          // vysoké stonky s klasy
+          const hgt = n === 1 ? 3 : n === 2 ? 5 : 6;
+          for (let k = 0; k < hgt; k++) { set(px, py + 1 - k, leaf[1]); if (k % 2) set(px + (k & 2 ? 1 : -1), py + 1 - k, leaf[2]); }
+          if (n === 3) { set(px + 1, py - 2, fruit[0]); set(px + 1, py - 3, fruit[1]); set(px + 1, py - 1, fruit[0]); }
+          continue;
+        }
+        const r = n === 1 ? 1.6 : n === 2 ? 2.6 : 3.2;
+        for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) {
+          if (Math.hypot(x, y) > r + (H(x + px, y + py, 4) - 0.5)) continue;
+          set(px + x, py + y, leaf[Math.max(0, Math.min(2, Math.round(1 - (x + y) / 4)))]);
+        }
+        if (n === 3) {
+          if (kind === 'cabbage') { for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) set(px + x, py + y, Math.abs(x) + Math.abs(y) < 2 ? fruit[1] : fruit[0]); }
+          else { set(px - 1, py - 2, fruit[1]); set(px + 2, py, fruit[0]); set(px + 1, py + 3, fruit[0]); }
+        }
+      }
+    }), [30, 60, 26], 255));
+    S.crops = {};
+    for (const k of CROP_KEYS) S.crops[k] = make(CROPS[k].leaf, CROPS[k].fruit, k);
     const leaf = [[54, 120, 50], [74, 146, 60], [100, 170, 72]];
     const stage = (n) => outline(paint(16, 16, (set) => {
       const plants = [[4, 5], [11, 5], [4, 12], [11, 12]];
@@ -814,6 +897,7 @@ const Sprites = (() => {
       for (let k = 0; k < 12; k++) { set(2 + k, 13 - k, [150, 100, 56]); set(3 + k, 13 - k, [120, 80, 44]); }
       rect(11, 1, 4, 2, [210, 214, 224]); rect(13, 1, 2, 4, [210, 214, 224]); set(12, 3, [210, 214, 224]);
     }));
+    I.parts = S.items.parts; I.herbs = S.items.herbs; I.medicine = S.items.medicine;
     I.zone_pasture = outline(paint(16, 16, (set, get, rect) => {
       rect(1, 11, 14, 4, [96, 150, 70]); rect(1, 11, 14, 1, [126, 180, 90]);
       for (const x of [2, 7, 12]) { rect(x, 5, 2, 8, [176, 126, 74]); set(x, 5, [206, 158, 100]); }

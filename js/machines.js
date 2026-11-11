@@ -53,9 +53,20 @@ const Machines = {
     s.prog = 0;
     return r.out;
   },
+  /** Políčko výstupu: před okrajem stavby ve směru otočení (u větších staveb uprostřed hrany). */
+  front(s) {
+    if (s.tiles.length === 1) return World.step(s.i, s.dir);
+    const w = World.w, dx = DIRS4[s.dir][0], dy = DIRS4[s.dir][1];
+    let best = s.tiles[0], bv = -Infinity;
+    for (const t of s.tiles) {
+      const v = (t % w) * dx + ((t / w) | 0) * dy;
+      if (v > bv) { bv = v; best = t; }
+    }
+    return World.step(best, s.dir);
+  },
   /** Políčka sousedící se stavbou (bez políčka výstupu). */
   sides(s) {
-    const out = [], w = World.w, front = BUILD[s.type].rot ? World.step(s.i, s.dir) : -1;
+    const out = [], w = World.w, front = BUILD[s.type].rot ? this.front(s) : -1;
     const own = new Set(s.tiles);
     for (const t of s.tiles) {
       const x = t % w;
@@ -116,7 +127,7 @@ const Machines = {
   },
   /** Vyloží hotové výrobky na políčko ve směru otočení. */
   eject(s) {
-    const front = World.step(s.i, s.dir);
+    const front = this.front(s);
     let left = 0;
     for (const k in s.out) {
       if (s.out[k] < 1) continue;
@@ -143,6 +154,51 @@ const Machines = {
       for (const k in s.out) outN += s.out[k];
       let ready = outN < this.OUT_CAP;
       if (!ready) s.msg = 'Výstup je plný – není kam vykládat';
+      if (m.heater) {
+        // topení: odebírá energii, jen když je kolem zima
+        s.want = World.tempAt(i) < 18 || TimeSys.temp() < 12;
+        s.on = s.want && Power.factor(s) > 0.05;
+        s.msg = !s.want ? 'Vypnuto – je teplo' : s.on ? 'Topí' : 'Bez energie';
+        if (s.on && t % 600 === 0) Maintenance.wearTime(s, 600 * 3);
+        continue;
+      }
+      if (m.radio) {
+        s.want = !Game.rescued;
+        const p = Power.factor(s);
+        s.on = s.want && p > 0.99;
+        if (!s.want) { s.msg = 'Loď přiletěla'; continue; }
+        if (!s.on) { s.msg = p > 0.05 ? `Málo energie (${Math.round(p * 100)} %) – vysílání stojí` : 'Bez energie'; continue; }
+        const before = Math.floor(s.prog * 4);
+        s.prog = Math.min(1, s.prog + 1 / (m.radio * 600));
+        s.msg = `Vysílá… ${Math.floor(s.prog * 100)} %`;
+        if (Math.floor(s.prog * 4) !== before && s.prog < 1) Game.alert(`Vysílačka: spojení navázáno z ${Math.floor(s.prog * 100)} %.`, 'info', i % World.w, (i / World.w) | 0);
+        if (s.prog >= 1) Game.rescue(s);
+        continue;
+      }
+      if (m.harvester) {
+        if (t % 60 !== 0) continue;
+        this.eject(s);
+        const job = this.fieldJob(s, m.harvester);
+        s.want = !!job;
+        const p = Power.factor(s);
+        s.on = s.want && p > 0.05;
+        if (!job) { s.msg = 'Čeká – pole v dosahu nepotřebují práci'; continue; }
+        if (!s.on) { s.msg = 'Bez energie'; continue; }
+        s.prog += p * 0.5;
+        s.msg = job.harvest ? 'Sklízí' : 'Zasévá';
+        if (s.prog >= 1) {
+          s.prog = 0;
+          if (job.harvest) {
+            const crop = World.crops[job.i];
+            World.removeCrop(job.i);
+            const y = Crops.yieldOf(crop, 6);
+            s.out[y.type] = (s.out[y.type] || 0) + y.n;
+            Game.stats.harvested += y.n;
+          } else World.setCrop(job.i, 0, World.cropType(job.i));
+          Maintenance.wear(s);
+        }
+        continue;
+      }
       if (ready && m.drill) {
         const o = World.obj[i];
         if (!o || o.type !== 'ore' || o.amount <= 0) { ready = false; s.msg = 'Ložisko je vyčerpané'; }
@@ -171,6 +227,20 @@ const Machines = {
         this.eject(s);
       }
     }
+  },
+
+  /** Nejbližší pole v dosahu sklízecího stroje: nejdřív zralé ke sklizni, pak prázdné k setí. */
+  fieldJob(s, r) {
+    const x0 = s.i % World.w, y0 = (s.i / World.w) | 0;
+    let sow = -1;
+    for (let y = y0 - r; y <= y0 + r; y++) for (let x = x0 - r; x <= x0 + r; x++) {
+      if (!World.inb(x, y)) continue;
+      const i = World.idx(x, y);
+      if (World.zone[i] !== 2 || Game.isReserved('o' + i)) continue;
+      if (World.ripeSet.has(i)) return { i, harvest: true };
+      if (sow < 0 && World.canSow(i) && Crops.canSowNow(World.cropType(i), i)) sow = i;
+    }
+    return sow >= 0 ? { i: sow, harvest: false } : null;
   },
 
   /** Posun pásů: každá hromádka se za jeden krok posune nejvýš o jedno políčko. */

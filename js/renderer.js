@@ -145,7 +145,7 @@ const Renderer = {
         if (cr) {
           this.img(Sprites.tilled, wx, wy, TS, TS);
           const st = cr.g >= 1 ? 3 : cr.g > 0.6 ? 2 : cr.g > 0.25 ? 1 : 0;
-          this.img(Sprites.crop[st], wx, wy, TS, TS);
+          this.img((Sprites.crops[cr.t] || Sprites.crop)[st], wx, wy, TS, TS);
         }
         const bp = World.bp[i];
         if (bp && BUILD[bp.type].layer === 'floor') this.drawBlueprint(bp, wx, wy);

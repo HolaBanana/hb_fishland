@@ -15,6 +15,8 @@ const Quests = {
     { text: 'Dokonči první výzkum', how: 'Kolonista s prací Výzkum bádá u stolu. Doporučení: Vodní energie a Mechanika.', done: () => Research.done.size >= 1, reward: { iron: 8 } },
     { text: 'Vyrob první energii', how: 'Vodní kolo patří na mělkou vodu (světle modrá). Stroje musí být do 5 políček od zdroje nebo sloupu.', done: () => Power.supply > 0, reward: { plank: 20 } },
     { text: 'Postav první vrták', how: 'Vyzkoumej Těžební stroje a postav Vrták přímo na ložisko rudy. Šipka určuje, kam bude rudu klást.', done: () => (World.structBy.drill || { size: 0 }).size >= 1, reward: { iron: 15 } },
+    { text: 'Vyzkoumej Soběstačnou kolonii', how: 'Pokračuj ve výzkumu (Výroba → Výzkum). Otevře cestu k elektřině.', done: () => Research.done.has('colony'), reward: { iron: 20, plank: 20 } },
+    { text: 'Postav vysílačku a zavolej záchranu', how: 'Vyzkoumej Rádiové spojení, postav Vysílačku (2×2) a dej jí 40 ⚡ po dobu 48 hodin. To je cíl hry.', done: () => !!Game.rescued, reward: { meal: 20 } },
   ],
   idx: 0,
   skipped: false,

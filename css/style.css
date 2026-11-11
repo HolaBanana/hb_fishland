@@ -84,6 +84,9 @@ table.trade .pname small { display: block; color: var(--muted); font-size: 13px;
 .fbtn { display: flex; align-items: center; gap: 4px; padding: 4px; font-size: 16px; background: var(--panel2); border: 2px solid #3d3122; border-radius: 3px; opacity: 0.45; min-height: 36px; }
 .fbtn.on { opacity: 1; border-color: var(--good); }
 .fbtn img { width: 20px; height: 20px; }
+.filters.crops { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); }
+.fbtn small { display: block; font-size: 13px; line-height: 12px; color: var(--muted); }
+.fbtn span { text-align: left; }
 #resources { display: flex; gap: 2px; align-items: center; padding: 2px 6px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 #resources::-webkit-scrollbar { display: none; }
 .res { display: flex; align-items: center; gap: 3px; padding: 0 6px; font-size: 20px; white-space: nowrap; }

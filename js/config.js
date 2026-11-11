@@ -79,16 +79,19 @@ const ITEMS = {
   coat:  { name: 'Teplé oblečení' },
   bow:   { name: 'Kuše' },
   ammo:  { name: 'Munice' },
+  parts: { name: 'Součástky' },
+  herbs: { name: 'Léčivé byliny' },
+  medicine: { name: 'Léky' },
 };
-const ITEM_ORDER = ['wood', 'plank', 'stone', 'ore', 'iron', 'food', 'meal', 'meat', 'egg', 'wool', 'leather', 'coat', 'bow', 'ammo'];
+const ITEM_ORDER = ['wood', 'plank', 'stone', 'ore', 'iron', 'parts', 'food', 'meal', 'meat', 'egg', 'herbs', 'medicine', 'wool', 'leather', 'coat', 'bow', 'ammo'];
 const ITEM_BASIC = ['wood', 'stone', 'food', 'meal'];   // v liště vidět vždy; ostatní až po prvním získání
 const COOKABLE = ['food', 'meat', 'egg'];               // z čeho se vaří jídlo
 // orientační hodnota surovin (obchod, bohatství kolonie)
-const VALUE = { wood: 1, stone: 1.5, plank: 2.5, ore: 2, iron: 6, food: 1.2, meal: 2.5, meat: 2, egg: 1.5, wool: 3, leather: 3, coat: 16, bow: 20, ammo: 0.6 };
+const VALUE = { wood: 1, stone: 1.5, plank: 2.5, ore: 2, iron: 6, parts: 16, food: 1.2, meal: 2.5, meat: 2, egg: 1.5, herbs: 2.5, medicine: 9, wool: 3, leather: 3, coat: 16, bow: 20, ammo: 0.6 };
 const ITEM_KEYS = Object.keys(ITEMS);
 const ITEM_BIT = {};
 ITEM_KEYS.forEach((k, n) => { ITEM_BIT[k] = 1 << n; });
-const FILTER_CUSTOM = 0x8000;   // příznak „sklad má vlastní filtr“
+const FILTER_CUSTOM = 1 << 30;  // příznak „sklad má vlastní filtr“ (bity 0–29 = druhy surovin)
 
 const SEASONS = ['Jaro', 'Léto', 'Podzim', 'Zima'];
 
@@ -174,6 +177,27 @@ const BUILD = {
               machine: { power: 15, recipe: { in: { ore: 2, wood: 1 }, out: { iron: 1 }, work: 140 }, pollute: 0.5 },
               hint: 'Sama si bere rudu a dřevo ze sousedních políček nebo z pásu, pláty klade ve směru šipky.' },
 
+  apothecary: { name: 'Lékárna',        layer: 'struct', cost: { plank: 12, stone: 6 }, work: 120, blocks: true, burns: true, mode: 'single', tech: 'medicine',
+              machine: { manual: true, recipe: { in: { herbs: 3 }, out: { medicine: 1 }, work: 120 }, target: 8 },
+              hint: 'Kolonista s prací Řemeslo tu vyrábí léky z léčivých bylin (pěstuj je na poli).' },
+
+  // ----- pozdní hra -----
+  heater:   { name: 'Elektrické topení', layer: 'struct', cost: { iron: 6, parts: 2 }, work: 90, blocks: true, mode: 'single', tech: 'electricity',
+              machine: { power: 8, heater: 18 },
+              hint: 'S energií vytopí místnost i v tuhé zimě – a pole uvnitř pak rostou i v zimě (skleník).' },
+  machineshop: { name: 'Strojní dílna', layer: 'struct', cost: { plank: 20, iron: 12 }, work: 160, blocks: true, mode: 'single', tech: 'electricity',
+              machine: { manual: true, recipe: { in: { iron: 2, plank: 1 }, out: { parts: 1 }, work: 140 }, target: 20 },
+              hint: 'Kolonista s prací Řemeslo tu vyrábí součástky ze železných plátů a prken.' },
+  assembler: { name: 'Montážní linka', layer: 'struct', cost: { iron: 20, parts: 6 }, work: 220, blocks: true, rot: true, size: [2, 1], mode: 'single', tech: 'assembly',
+              machine: { power: 20, recipe: { in: { iron: 2, plank: 1 }, out: { parts: 1 }, work: 120 } },
+              hint: 'Vyrábí součástky bez obsluhy. Pláty a prkna bere ze sousedních políček nebo z pásu.' },
+  harvester: { name: 'Sklízecí stroj', layer: 'struct', cost: { iron: 14, parts: 4 }, work: 180, blocks: true, rot: true, mode: 'single', tech: 'agri',
+              machine: { power: 10, harvester: 4 },
+              hint: 'Sám zasévá a sklízí pole do vzdálenosti 4 políček. Úrodu klade ve směru šipky.' },
+  radio:    { name: 'Vysílačka',       layer: 'struct', cost: { iron: 60, parts: 30, plank: 40 }, work: 400, blocks: true, size: [2, 2], mode: 'single', tech: 'radio',
+              machine: { power: 40, radio: 48 },
+              hint: 'Cíl hry: s energií volá o pomoc. Po 48 hodinách nepřetržitého vysílání přiletí záchranná loď.' },
+
   // ----- energie -----
   pole:     { name: 'Sloup vedení',    layer: 'struct', cost: { wood: 4, iron: 1 }, work: 40, blocks: true, mode: 'single', tech: 'water',
               machine: { pole: true },
@@ -204,11 +228,17 @@ const TECHS = {
   defense:     { name: 'Obrana',            cost: 100, req: ['belts'],          desc: 'Zbrojnice, střílny a brány.' },
   logistics:   { name: 'Logistika',         cost: 90,  req: ['belts'],          desc: 'Rozdělovač, třídič a podzemní pás.' },
   rails:       { name: 'Koleje',            cost: 130, req: ['logistics'],      desc: 'Koleje s vozíkem na delší vzdálenosti.' },
-  colony:      { name: 'Soběstačná kolonie', cost: 260, req: ['autosaw', 'wind', 'steam', 'autofurnace'], desc: 'Završení výzkumu – cíl hry.' },
+  colony:      { name: 'Soběstačná kolonie', cost: 260, req: ['autosaw', 'wind', 'steam', 'autofurnace'], desc: 'Kolonie se uživí sama – otevírá cestu k elektřině.' },
+  medicine:    { name: 'Medicína',          cost: 80,  req: [],                 desc: 'Lékárna – léky z léčivých bylin.' },
+  electricity: { name: 'Elektřina',         cost: 220, req: ['colony'],         desc: 'Elektrické topení a strojní dílna na součástky.' },
+  agri:        { name: 'Zemědělské stroje', cost: 220, req: ['electricity'],    desc: 'Sklízecí stroj – pole bez farmářů.' },
+  assembly:    { name: 'Montáž',            cost: 260, req: ['electricity'],    desc: 'Montážní linka na součástky bez obsluhy.' },
+  radio:       { name: 'Rádiové spojení',   cost: 340, req: ['agri', 'assembly'], desc: 'Vysílačka – zavolej záchrannou loď. Cíl hry.' },
 };
 
 // Pracovní typy (pořadí = pořadí při stejné prioritě)
 const WORK_TYPES = [
+  { id: 'doctor', name: 'Lékař',     short: 'Lék.',  skill: 'medicine' },
   { id: 'cook',  name: 'Vaření',    short: 'Vař.',  skill: 'cook' },
   { id: 'build', name: 'Stavba',    short: 'Stav.', skill: 'build' },
   { id: 'grow',  name: 'Farmaření', short: 'Farm.', skill: 'grow' },
@@ -220,7 +250,7 @@ const WORK_TYPES = [
   { id: 'research', name: 'Výzkum', short: 'Výz.',  skill: 'research' },
   { id: 'haul',  name: 'Nošení',    short: 'Noš.',  skill: null },
 ];
-const SKILLS = { build: 'Stavba', chop: 'Dřevorubectví', mine: 'Těžba', grow: 'Farmaření', cook: 'Vaření', craft: 'Řemeslo', research: 'Výzkum', hunt: 'Lov' };
+const SKILLS = { build: 'Stavba', chop: 'Dřevorubectví', mine: 'Těžba', grow: 'Farmaření', cook: 'Vaření', craft: 'Řemeslo', research: 'Výzkum', hunt: 'Lov', medicine: 'Lékařství' };
 
 // Zvěř a hospodářská zvířata
 const ANIMALS = {

@@ -38,9 +38,10 @@ const Research = {
     const unlocked = Object.keys(BUILD).filter(k => BUILD[k].tech === id).map(k => BUILD[k].name);
     Game.alert(`Výzkum dokončen: ${TECHS[id].name}` + (unlocked.length ? ` – nové stavby: ${unlocked.join(', ')}.` : '.'), 'good');
     if (UI.ready) UI.setTab(UI.tab);
+    if (id === 'colony') Game.alert('Kolonie je soběstačná! Další výzkum vede k elektřině a nakonec k vysílačce, která přivolá záchrannou loď.', 'good');
     if (!this.won && Object.keys(TECHS).every(t => this.done.has(t))) {
       this.won = true;
-      UI.victory();
+      Game.alert('Celý strom technologií je vyzkoumán. Postav vysílačku a zavolej záchranu!', 'good');
     }
   },
   pack() { return { done: [...this.done], points: this.points, current: this.current, won: this.won }; },

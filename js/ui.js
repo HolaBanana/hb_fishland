@@ -7,7 +7,7 @@ const UI = {
   TABS: [
     { id: 'orders', label: 'Příkazy', icon: 'chop', tools: ['select', 'chop', 'mine', 'harvest', 'hunt', 'decon', 'cancel'] },
     { id: 'build', label: 'Stavba', icon: 'wall_wood', tools: ['wall_wood', 'wall_stone', 'door', 'floor_wood', 'floor_stone', 'bed', 'campfire', 'table', 'chair', 'chest', 'lamp'] },
-    { id: 'prod', label: 'Výroba', icon: 'belt', tools: ['saw', 'furnace', 'tailor', 'armory', 'research', 'belt', 'splitter', 'sorter', 'tunnel', 'rail', 'cartstop', 'drill', 'autosaw', 'autofurnace', 'pole', 'waterwheel', 'windmill', 'boiler', 'turret', 'gate'],
+    { id: 'prod', label: 'Výroba', icon: 'belt', tools: ['saw', 'furnace', 'tailor', 'armory', 'apothecary', 'machineshop', 'research', 'belt', 'splitter', 'sorter', 'tunnel', 'rail', 'cartstop', 'drill', 'autosaw', 'autofurnace', 'assembler', 'harvester', 'pole', 'waterwheel', 'windmill', 'boiler', 'heater', 'turret', 'gate', 'radio'],
       actions: [{ icon: 'research_btn', label: 'Výzkum', run: () => UI.openResearch() }, { icon: 'power_btn', label: 'Energie', run: () => UI.openPower() },
         { icon: 'pollution_btn', label: 'Znečištění', run: () => { Pollution.show = !Pollution.show; UI.toast(Pollution.show ? 'Vrstva znečištění zapnuta (fialová = špinavý vzduch).' : 'Vrstva znečištění vypnuta.', 'info'); } }] },
     { id: 'zones', label: 'Zóny', icon: 'zone_farm', tools: ['zone_stock', 'zone_farm', 'zone_pasture', 'coop', 'sheepfold', 'zone_clear'] },
@@ -228,7 +228,7 @@ const UI = {
       m.style.width = c.mood + '%';
       m.style.background = this.moodColor(c.mood);
       card.classList.toggle('sel', !!(Game.selected && Game.selected.c === c));
-      card.classList.toggle('alert', c.hunger < 15 || c.energy < 10 || c.health < 50 || c.inBreak());
+      card.classList.toggle('alert', c.hunger < 15 || c.energy < 10 || c.health < 50 || c.inBreak() || c.bleed || !!(c.disease && c.disease.sev > 0.5));
       card.title = `${c.name} – ${c.activity}`;
     }
   },
@@ -266,7 +266,8 @@ const UI = {
       this.$('pFollow').onclick = () => { Camera.follow = Camera.follow === c ? null : c; };
       this.$('pPrio').onclick = () => this.openPriorities();
     }
-    this.$('pAct').textContent = (c.carry ? `[${ITEMS[c.carry.type].name} ×${c.carry.n}] ` : '') + c.activity + (c.coat || c.bow ? ' · výbava: ' + [c.coat && 'oblečení', c.bow && 'kuše'].filter(Boolean).join(', ') : '');
+    const med = Medicine.status(c);
+    this.$('pAct').textContent = (med ? '[' + med + '] ' : '') + (c.carry ? `[${ITEMS[c.carry.type].name} ×${c.carry.n}] ` : '') + c.activity + (c.coat || c.bow ? ' · výbava: ' + [c.coat && 'oblečení', c.bow && 'kuše'].filter(Boolean).join(', ') : '');
     this.$('pFollow').textContent = Camera.follow === c ? 'Nesledovat' : 'Sledovat';
     this.$('pNeeds').innerHTML =
       this.bar('Zdraví', c.health, c.health < 40 ? '#e5534b' : '#d9534f') +
@@ -366,7 +367,7 @@ const UI = {
       rows.push(['Materiál', Object.keys(cost).map(m => `${ITEMS[m].name} ${bp.del[m] || 0}/${cost[m]}`).join(', ')]);
     }
     const cr = World.crops[i];
-    if (cr) rows.push(['Brambory', cr.g >= 1 ? 'zralé ke sklizni' : `roste ${Math.round(cr.g * 100)} %`]);
+    if (cr) rows.push([Crops.def(cr.t).name, cr.g >= 1 ? 'zralé ke sklizni' : `roste ${Math.round(cr.g * 100)} %` + (Crops.growFactor(cr.t, World.roof[i] ? World.tempAt(i) : TimeSys.temp(), !!World.roof[i]) <= 0 ? ' – teď neroste (zima / chlad)' : '')]);
     const it = World.items[i];
     if (it) {
       const fr = World.freshness(i);
@@ -378,8 +379,14 @@ const UI = {
     else if (World.isRoofed(i)) rows.push(['Střecha', 'ano']);
     rows.push(['Teplota', Math.round(World.tempAt(i)) + ' °C']);
     if (Fire.burning(i)) rows.push(['Požár', 'hoří!']);
-    // filtr skladu / truhly
+    // filtr skladu / truhly, volba plodiny pole
     let filterHtml = '';
+    if (World.zone[i] === 2) {
+      const cur = World.cropType(i);
+      filterHtml = `<div class="psec">Co se tu pěstuje (celé pole)</div><div class="filters crops">` + CROP_KEYS.map((k, n) =>
+        `<button class="fbtn ${cur === k ? 'on' : ''}" data-act="crop:${n}"><img class="pix" src="${Sprites.toURL(Sprites.crops[k][3], 2)}" alt=""><span>${CROPS[k].name}<small>${CROPS[k].season}</small></span></button>`).join('') +
+        `</div><div class="mnote">Už zasazené plodiny dorostou; nový druh se zaseje po sklizni.${World.roof[i] ? ' Pole je v místnosti (skleník) – roste i v zimě, když je vytopená.' : ''}</div>`;
+    }
     if (World.isStock(i)) {
       const f = World.filter[i];
       filterHtml = `<div class="psec">Co se sem smí ukládat</div><div class="filters">` + ITEM_KEYS.map(k =>
@@ -395,6 +402,7 @@ const UI = {
       const act = e.target.closest && e.target.closest('[data-act]');
       if (!act) return;
       const cur = World.struct[i], a = act.dataset.act;
+      if (a.startsWith('crop:')) { for (const q of World.zoneRegion(i)) World.cropKind[q] = +a.slice(5); p.dataset.kind = ''; this.tileInfo(p, x, y); return; }
       if (!cur) return;
       if (a.startsWith('sf:')) cur.filter = a.slice(3) || null;
       else if (a === 'stop') { cur.unload = !cur.unload; Carts.sync(); }
@@ -403,7 +411,7 @@ const UI = {
       p.dataset.kind = '';
       this.tileInfo(p, x, y);
     };
-    if (filterHtml) {
+    if (filterHtml && World.isStock(i)) {
       const region = World.stockRegion(i);
       const cur = () => (World.filter[i] & FILTER_CUSTOM) ? World.filter[i] : (FILTER_CUSTOM | (FILTER_CUSTOM - 1));
       const apply = (mask) => { World.setFilter(region, mask); this.tileInfo(p, x, y); };
@@ -835,14 +843,16 @@ const UI = {
   /** Vítězství – dokončený strom technologií. Hrát se dá dál. */
   victory() {
     const m = this.$('modal'), st = Game.stats;
-    m.innerHTML = `<div class="mbox help"><div class="mhead"><b>Kolonie je soběstačná!</b></div>
-      <div class="hbody"><p>Dokončil/a jsi celý výzkum ${TimeSys.day}. dne. Stroje teď pracují za kolonisty – cíl hry je splněn.</p>
+    m.innerHTML = `<div class="mbox help"><div class="mhead"><b>Záchrana!</b></div>
+      <div class="hbody"><p>Vysílačka dovysílala a ${TimeSys.day}. dne přistála záchranná loď. Kolonie přežila ${TimeSys.year > 1 ? TimeSys.year - 1 + ' rok' + (TimeSys.year > 2 ? 'y' : '') + ' a ' : ''}${TimeSys.seasonName.toLowerCase()} – cíl hry je splněn.</p>
       <table class="ttab">
         <tr><td>Kolonistů</td><td>${Game.colonists.length}</td></tr>
         <tr><td>Postavené stavby</td><td>${st.built}</td></tr>
         <tr><td>Výrobků ze strojů</td><td>${st.machined}</td></tr>
         <tr><td>Výrobků z dílen</td><td>${st.crafted}</td></tr>
-      </table></div><div class="menu"><button id="mBack">Hrát dál</button></div></div>`;
+        <tr><td>Odražené nájezdy</td><td>${Combat.count}</td></tr>
+        <tr><td>Padlí</td><td>${st.deaths.length}</td></tr>
+      </table><p>Můžeš hrát dál – kolonie zůstává tvoje.</p></div><div class="menu"><button id="mBack">Hrát dál</button></div></div>`;
     m.classList.remove('hidden');
     this.$('mBack').onclick = () => m.classList.add('hidden');
   },

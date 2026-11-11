@@ -94,6 +94,9 @@ table.trade .pname small { display: block; color: var(--muted); font-size: 13px;
 .fbtn { display: flex; align-items: center; gap: 4px; padding: 4px; font-size: 16px; background: var(--panel2); border: 2px solid #3d3122; border-radius: 3px; opacity: 0.45; min-height: 36px; }
 .fbtn.on { opacity: 1; border-color: var(--good); }
 .fbtn img { width: 20px; height: 20px; }
+.filters.crops { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); }
+.fbtn small { display: block; font-size: 13px; line-height: 12px; color: var(--muted); }
+.fbtn span { text-align: left; }
 #resources { display: flex; gap: 2px; align-items: center; padding: 2px 6px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 #resources::-webkit-scrollbar { display: none; }
 .res { display: flex; align-items: center; gap: 3px; padding: 0 6px; font-size: 20px; white-space: nowrap; }
@@ -565,16 +568,19 @@ const ITEMS = {
   coat:  { name: 'Teplé oblečení' },
   bow:   { name: 'Kuše' },
   ammo:  { name: 'Munice' },
+  parts: { name: 'Součástky' },
+  herbs: { name: 'Léčivé byliny' },
+  medicine: { name: 'Léky' },
 };
-const ITEM_ORDER = ['wood', 'plank', 'stone', 'ore', 'iron', 'food', 'meal', 'meat', 'egg', 'wool', 'leather', 'coat', 'bow', 'ammo'];
+const ITEM_ORDER = ['wood', 'plank', 'stone', 'ore', 'iron', 'parts', 'food', 'meal', 'meat', 'egg', 'herbs', 'medicine', 'wool', 'leather', 'coat', 'bow', 'ammo'];
 const ITEM_BASIC = ['wood', 'stone', 'food', 'meal'];   // v liště vidět vždy; ostatní až po prvním získání
 const COOKABLE = ['food', 'meat', 'egg'];               // z čeho se vaří jídlo
 // orientační hodnota surovin (obchod, bohatství kolonie)
-const VALUE = { wood: 1, stone: 1.5, plank: 2.5, ore: 2, iron: 6, food: 1.2, meal: 2.5, meat: 2, egg: 1.5, wool: 3, leather: 3, coat: 16, bow: 20, ammo: 0.6 };
+const VALUE = { wood: 1, stone: 1.5, plank: 2.5, ore: 2, iron: 6, parts: 16, food: 1.2, meal: 2.5, meat: 2, egg: 1.5, herbs: 2.5, medicine: 9, wool: 3, leather: 3, coat: 16, bow: 20, ammo: 0.6 };
 const ITEM_KEYS = Object.keys(ITEMS);
 const ITEM_BIT = {};
 ITEM_KEYS.forEach((k, n) => { ITEM_BIT[k] = 1 << n; });
-const FILTER_CUSTOM = 0x8000;   // příznak „sklad má vlastní filtr“
+const FILTER_CUSTOM = 1 << 30;  // příznak „sklad má vlastní filtr“ (bity 0–29 = druhy surovin)
 
 const SEASONS = ['Jaro', 'Léto', 'Podzim', 'Zima'];
 
@@ -660,6 +666,27 @@ const BUILD = {
               machine: { power: 15, recipe: { in: { ore: 2, wood: 1 }, out: { iron: 1 }, work: 140 }, pollute: 0.5 },
               hint: 'Sama si bere rudu a dřevo ze sousedních políček nebo z pásu, pláty klade ve směru šipky.' },
 
+  apothecary: { name: 'Lékárna',        layer: 'struct', cost: { plank: 12, stone: 6 }, work: 120, blocks: true, burns: true, mode: 'single', tech: 'medicine',
+              machine: { manual: true, recipe: { in: { herbs: 3 }, out: { medicine: 1 }, work: 120 }, target: 8 },
+              hint: 'Kolonista s prací Řemeslo tu vyrábí léky z léčivých bylin (pěstuj je na poli).' },
+
+  // ----- pozdní hra -----
+  heater:   { name: 'Elektrické topení', layer: 'struct', cost: { iron: 6, parts: 2 }, work: 90, blocks: true, mode: 'single', tech: 'electricity',
+              machine: { power: 8, heater: 18 },
+              hint: 'S energií vytopí místnost i v tuhé zimě – a pole uvnitř pak rostou i v zimě (skleník).' },
+  machineshop: { name: 'Strojní dílna', layer: 'struct', cost: { plank: 20, iron: 12 }, work: 160, blocks: true, mode: 'single', tech: 'electricity',
+              machine: { manual: true, recipe: { in: { iron: 2, plank: 1 }, out: { parts: 1 }, work: 140 }, target: 20 },
+              hint: 'Kolonista s prací Řemeslo tu vyrábí součástky ze železných plátů a prken.' },
+  assembler: { name: 'Montážní linka', layer: 'struct', cost: { iron: 20, parts: 6 }, work: 220, blocks: true, rot: true, size: [2, 1], mode: 'single', tech: 'assembly',
+              machine: { power: 20, recipe: { in: { iron: 2, plank: 1 }, out: { parts: 1 }, work: 120 } },
+              hint: 'Vyrábí součástky bez obsluhy. Pláty a prkna bere ze sousedních políček nebo z pásu.' },
+  harvester: { name: 'Sklízecí stroj', layer: 'struct', cost: { iron: 14, parts: 4 }, work: 180, blocks: true, rot: true, mode: 'single', tech: 'agri',
+              machine: { power: 10, harvester: 4 },
+              hint: 'Sám zasévá a sklízí pole do vzdálenosti 4 políček. Úrodu klade ve směru šipky.' },
+  radio:    { name: 'Vysílačka',       layer: 'struct', cost: { iron: 60, parts: 30, plank: 40 }, work: 400, blocks: true, size: [2, 2], mode: 'single', tech: 'radio',
+              machine: { power: 40, radio: 48 },
+              hint: 'Cíl hry: s energií volá o pomoc. Po 48 hodinách nepřetržitého vysílání přiletí záchranná loď.' },
+
   // ----- energie -----
   pole:     { name: 'Sloup vedení',    layer: 'struct', cost: { wood: 4, iron: 1 }, work: 40, blocks: true, mode: 'single', tech: 'water',
               machine: { pole: true },
@@ -690,11 +717,17 @@ const TECHS = {
   defense:     { name: 'Obrana',            cost: 100, req: ['belts'],          desc: 'Zbrojnice, střílny a brány.' },
   logistics:   { name: 'Logistika',         cost: 90,  req: ['belts'],          desc: 'Rozdělovač, třídič a podzemní pás.' },
   rails:       { name: 'Koleje',            cost: 130, req: ['logistics'],      desc: 'Koleje s vozíkem na delší vzdálenosti.' },
-  colony:      { name: 'Soběstačná kolonie', cost: 260, req: ['autosaw', 'wind', 'steam', 'autofurnace'], desc: 'Završení výzkumu – cíl hry.' },
+  colony:      { name: 'Soběstačná kolonie', cost: 260, req: ['autosaw', 'wind', 'steam', 'autofurnace'], desc: 'Kolonie se uživí sama – otevírá cestu k elektřině.' },
+  medicine:    { name: 'Medicína',          cost: 80,  req: [],                 desc: 'Lékárna – léky z léčivých bylin.' },
+  electricity: { name: 'Elektřina',         cost: 220, req: ['colony'],         desc: 'Elektrické topení a strojní dílna na součástky.' },
+  agri:        { name: 'Zemědělské stroje', cost: 220, req: ['electricity'],    desc: 'Sklízecí stroj – pole bez farmářů.' },
+  assembly:    { name: 'Montáž',            cost: 260, req: ['electricity'],    desc: 'Montážní linka na součástky bez obsluhy.' },
+  radio:       { name: 'Rádiové spojení',   cost: 340, req: ['agri', 'assembly'], desc: 'Vysílačka – zavolej záchrannou loď. Cíl hry.' },
 };
 
 // Pracovní typy (pořadí = pořadí při stejné prioritě)
 const WORK_TYPES = [
+  { id: 'doctor', name: 'Lékař',     short: 'Lék.',  skill: 'medicine' },
   { id: 'cook',  name: 'Vaření',    short: 'Vař.',  skill: 'cook' },
   { id: 'build', name: 'Stavba',    short: 'Stav.', skill: 'build' },
   { id: 'grow',  name: 'Farmaření', short: 'Farm.', skill: 'grow' },
@@ -706,7 +739,7 @@ const WORK_TYPES = [
   { id: 'research', name: 'Výzkum', short: 'Výz.',  skill: 'research' },
   { id: 'haul',  name: 'Nošení',    short: 'Noš.',  skill: null },
 ];
-const SKILLS = { build: 'Stavba', chop: 'Dřevorubectví', mine: 'Těžba', grow: 'Farmaření', cook: 'Vaření', craft: 'Řemeslo', research: 'Výzkum', hunt: 'Lov' };
+const SKILLS = { build: 'Stavba', chop: 'Dřevorubectví', mine: 'Těžba', grow: 'Farmaření', cook: 'Vaření', craft: 'Řemeslo', research: 'Výzkum', hunt: 'Lov', medicine: 'Lékařství' };
 
 // Zvěř a hospodářská zvířata
 const ANIMALS = {
@@ -756,7 +789,8 @@ const World = {
     this.crops = new Array(n).fill(null);   // {g}
     this.bp = new Array(n).fill(null);      // {type, del:{}, i, dir, tiles}
     this.zone = new Uint8Array(n);          // 0 nic, 1 sklad, 2 pole
-    this.filter = new Uint16Array(n);       // filtr surovin skladu (0 = vše)
+    this.filter = new Uint32Array(n);       // filtr surovin skladu (0 = vše)
+    this.cropKind = new Uint8Array(n);      // druh plodiny pole (index do CROP_KEYS)
     this.roof = new Uint8Array(n);          // 1 = pod střechou (uzavřená místnost)
     this.roomId = new Int16Array(n);        // index do rooms, -1 = venku
     this.rooms = [];
@@ -1024,10 +1058,31 @@ const World = {
   stackCap(i) { return this.isChest(i) ? Config.CHEST_STACK : Config.STACK; },
   /** Povoluje filtr skladu na políčku daný druh suroviny? */
   allowed(i, type) { const f = this.filter[i]; return !(f & FILTER_CUSTOM) || !!(f & ITEM_BIT[type]); },
+  /** Výkon topení v místnosti podle toho, zda mají energii. */
+  heaterHeat(room) {
+    let h = 0;
+    for (const s of room.heaters) if (!s.decon && !s.broken && Power.factor(s) > 0.05) h += BUILD[s.type].machine.heater * Power.factor(s);
+    return h;
+  },
   isBelt(i) { const s = this.struct[i]; return !!s && !!BUILD[s.type].machine && !!BUILD[s.type].machine.belt; },
   /** Leží hromádka „volně“ (mimo sklad nebo ve skladu, kam nepatří)? Na pásu ne. */
   isLoose(i) { const it = this.items[i]; return !!it && !this.isBelt(i) && (!this.isStock(i) || !this.allowed(i, it.type)); },
   /** Souvislý sklad (zóna) nebo jedna truhla, do které políčko patří. */
+  /** Souvislá oblast stejné zóny (4-sousedství). */
+  zoneRegion(i) {
+    const z = this.zone[i];
+    if (!z) return [];
+    const out = [i], seen = new Set([i]);
+    for (let h = 0; h < out.length; h++) {
+      const c = out[h], x = c % this.w, y = (c / this.w) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (!this.inb(x + dx, y + dy)) continue;
+        const q = this.idx(x + dx, y + dy);
+        if (!seen.has(q) && this.zone[q] === z) { seen.add(q); out.push(q); }
+      }
+    }
+    return out;
+  },
   stockRegion(i) {
     if (this.isChest(i)) return [i];
     if (this.zone[i] !== 1) return [];
@@ -1132,8 +1187,9 @@ const World = {
     for (const i of this.farmTiles) if (!this.crops[i]) this.emptyFarm.add(i);
     this.itemVer++;
   },
-  setCrop(i, g) {
-    this.crops[i] = { g };
+  cropType(i) { return CROP_KEYS[this.cropKind[i]] || 'potato'; },
+  setCrop(i, g, t) {
+    this.crops[i] = { g, t: t || this.cropType(i) };
     this.cropSet.add(i);
     this.emptyFarm.delete(i);
     if (g >= 1) this.ripeSet.add(i);
@@ -1320,13 +1376,15 @@ const World = {
         }
       }
       if (tiles.length > Config.ROOM_MAX) continue;
-      const room = { id: this.rooms.length, tiles, beds: [], heat: 0 };
+      const room = { id: this.rooms.length, tiles, beds: [], heat: 0, heaters: [] };
       for (const i of tiles) {
         this.roof[i] = 1; this.roomId[i] = room.id;
         const s = this.struct[i];
         if (s) {
           if (s.type === 'bed') room.beds.push(i);
           if (BUILD[s.type].heat) room.heat += BUILD[s.type].heat;
+          const hm = BUILD[s.type].machine;
+          if (hm && hm.heater && s.i === i) room.heaters.push(s);
         }
       }
       this.rooms.push(room);
@@ -1353,7 +1411,7 @@ const World = {
   tempAt(i) {
     let t = TimeSys.temp();
     const room = this.roomAt(i);
-    if (room) t += 5 + Math.min(22, room.heat);
+    if (room) t += 5 + Math.min(26, room.heat + this.heaterHeat(room));
     else {
       // venku hřeje oheň jen zblízka
       const x = i % this.w, y = (i / this.w) | 0;
@@ -1371,16 +1429,19 @@ const World = {
     if (this.roomsDirty) this.computeRooms();
     const light = TimeSys.daylight();
     const temp = TimeSys.temp(), winter = TimeSys.season === 3;
-    // v zimě a při mrazu plodiny nerostou
-    const warm = winter ? 0 : U.clamp((temp - 1) / 6, 0, 1);
-    const growMul = (0.15 + 0.85 * light) * (1 + Weather.rain * 0.35) * warm;
+    const growMul = (0.15 + 0.85 * light) * (1 + Weather.rain * 0.35);
     this.spoil(hours, temp);
     let matured = 0;
     for (const i of this.cropSet) {
       const c = this.crops[i];
       if (!c || c.g >= 1) continue;
       const fert = TERRAIN[this.terrain[i]].fert;
-      c.g += hours / Config.CROP_HOURS * fert * growMul * (1 - 0.7 * Math.min(1, Pollution.at(i)));
+      const cd = Crops.def(c.t);
+      // venku podle počasí a ročního období; skleník (pole v místnosti) podle teploty uvnitř, i v zimě
+      const mul = this.roof[i]
+        ? 0.65 * (0.4 + 0.6 * light) * Crops.growFactor(c.t, this.tempAt(i), true)
+        : growMul * Crops.growFactor(c.t, temp, false);
+      c.g += hours / cd.hours * fert * mul * (1 - 0.7 * Math.min(1, Pollution.at(i)));
       if (c.g >= 1) { c.g = 1; matured++; this.ripeSet.add(i); }
     }
     if (matured > 0) Game.notifyOnce('crop', `Úroda dozrála (${matured} polí) – kolonisté ji sklidí.`, 'good', 360);
@@ -1709,6 +1770,144 @@ const Weather = {
 
 </script>
   <script>
+// ===== js/crops.js =====
+'use strict';
+/**
+ * Crops – druhy plodin. Druh se volí pro celé souvislé pole (klepnutím na pole).
+ *  - brambory: spolehlivé, rostou od jara do podzimu,
+ *  - kukuřice: rychlá a vydatná, ale jen v teple (léto),
+ *  - zelí: pomalé, ale snese mráz – roste i v zimě venku,
+ *  - léčivé byliny: suroviny na léky.
+ */
+const CROPS = {
+  potato:  { name: 'Brambory',      hours: 42, minT: 2,  out: 'food',  n: 6, season: 'jaro až podzim', leaf: [[54, 120, 50], [74, 146, 60], [100, 170, 72]], fruit: [[216, 176, 100], [240, 236, 250]] },
+  corn:    { name: 'Kukuřice',      hours: 32, minT: 12, out: 'food',  n: 9, season: 'jen v teple (léto)', leaf: [[70, 130, 40], [96, 156, 50], [130, 180, 64]], fruit: [[240, 206, 70], [250, 230, 120]] },
+  cabbage: { name: 'Zelí',          hours: 50, minT: -4, out: 'food',  n: 5, season: 'celý rok, snese mráz', frost: true, leaf: [[60, 120, 90], [90, 156, 110], [140, 196, 150]], fruit: [[170, 220, 170], [200, 236, 200]] },
+  herbs:   { name: 'Léčivé byliny', hours: 36, minT: 5,  out: 'herbs', n: 3, season: 'jaro až podzim', leaf: [[60, 110, 60], [84, 140, 76], [120, 170, 96]], fruit: [[170, 110, 210], [240, 236, 250]] },
+};
+const CROP_KEYS = Object.keys(CROPS);
+
+const Crops = {
+  def(t) { return CROPS[t] || CROPS.potato; },
+  /** Roste plodina venku za daného počasí? (v zimě jen mrazuvzdorné) */
+  growFactor(t, temp, roofed) {
+    const d = this.def(t);
+    if (!roofed && TimeSys.season === 3 && !d.frost) return 0;
+    return U.clamp((temp - d.minT) / 6, 0, 1);
+  },
+  /** Má smysl teď zasévat? */
+  canSowNow(t, i) {
+    const d = this.def(t);
+    if (World.roof[i]) return World.tempAt(i) > d.minT;
+    if (TimeSys.season === 3 && !d.frost) return false;
+    return TimeSys.temp() > d.minT - 3;
+  },
+  /** Výnos sklizně (bonus za dovednost farmáře). */
+  yieldOf(crop, skillLvl) {
+    const d = this.def(crop && crop.t);
+    return { type: d.out, n: Math.max(1, Math.round(d.n * (0.85 + skillLvl * 0.04))) };
+  },
+};
+
+</script>
+  <script>
+// ===== js/medicine.js =====
+'use strict';
+/**
+ * Medicine – nemoci, zranění a léčení.
+ *  - Nemoc má závažnost (sev) a imunitu (imm); když imunita doroste dřív, kolonista
+ *    se uzdraví, jinak nemoc ubírá zdraví. Odpočinek v posteli a ošetření (léky,
+ *    byliny) zrychlují imunitu.
+ *  - Zranění z boje krvácí, dokud je lékař neošetří; neošetřená rána se může zanítit.
+ */
+const DISEASES = {
+  flu:       { name: 'Chřipka',      sev: 1 / 34, imm: 1 / 30, contagious: true },
+  infection: { name: 'Zánět rány',   sev: 1 / 26, imm: 1 / 30 },
+  poison:    { name: 'Otrava jídlem', sev: 1 / 14, imm: 1 / 10 },
+};
+
+const Medicine = {
+  next: 0,
+
+  reset() { this.next = TimeSys.minutes + 60 * 24 * U.range(5, 8); },
+  infect(c, id) {
+    if (c.disease || c.dead) return false;
+    c.disease = { id, sev: 0.05, imm: 0 };
+    Game.alert(`${c.first} onemocněl/a: ${DISEASES[id].name.toLowerCase()}. Lékař ho/ji ošetří, odpočinek v posteli pomáhá.`, 'warn', c.tx, c.ty);
+    return true;
+  },
+  /** Rána z boje. */
+  wound(c) {
+    if (!c.bleed) Game.notifyOnce('bleed' + c.id, `${c.first} je zraněn/a a krvácí – potřebuje lékaře.`, 'warn', 60);
+    c.bleed = true;
+    c.bleedT = 0;
+  },
+  isTended(c) { return (c.tendedUntil || 0) > TimeSys.minutes; },
+  needsCare(c) { return !c.dead && (c.bleed || (c.disease && !this.isTended(c))); },
+
+  /** Jednou za herní hodinu pro každého kolonistu. Vrací ztrátu zdraví. */
+  hourly(c) {
+    let dmg = 0;
+    if (c.bleed) {
+      dmg += 1.5;
+      c.bleedT = (c.bleedT || 0) + 1;
+      if (c.bleedT > 10 && U.chance(0.08)) this.infect(c, 'infection');
+    }
+    const d = c.disease;
+    if (d) {
+      const def = DISEASES[d.id];
+      const care = this.isTended(c) ? c.careQ || 1.3 : 1;
+      const rest = c.sleeping ? 1.35 : 1;
+      d.imm += def.imm * care * rest * (0.85 + U.rand() * 0.3);
+      d.sev += def.sev * (0.85 + U.rand() * 0.3);
+      if (d.imm >= 1) {
+        c.disease = null;
+        c.addThought('cured', 'Uzdravil/a se', 4, 12);
+        UI.toast(`${c.first} se uzdravil/a.`, 'good');
+      } else if (d.sev >= 1) dmg += 6;
+      else if (d.sev > 0.6) dmg += 1;
+      // nakažlivá nemoc se může přenést na blízké
+      if (c.disease && def.contagious && d.sev > 0.2) {
+        for (const o of Game.colonists) if (o !== c && !o.disease && Math.hypot(o.x - c.x, o.y - c.y) < 3 && U.chance(0.04)) this.infect(o, d.id);
+      }
+    }
+    return dmg;
+  },
+  /** Náhodné epidemie. */
+  events() {
+    if (TimeSys.minutes < this.next) return;
+    this.next = TimeSys.minutes + 60 * 24 * U.range(6, 10);
+    const cs = Game.colonists.filter(c => !c.disease);
+    if (!cs.length) return;
+    // chřipka chodí častěji v chladu
+    if (TimeSys.temp() < 10 || U.chance(0.5)) this.infect(U.pick(cs), 'flu');
+  },
+  /** Syrové nebo zkažené jídlo může přivodit otravu. */
+  ate(c, type, fresh) {
+    const risk = (type === 'meat' ? 0.06 : type === 'food' || type === 'egg' ? 0.015 : 0.003) + (fresh < 0.25 ? 0.05 : 0);
+    if (U.chance(risk)) this.infect(c, 'poison');
+  },
+  /** Ošetření: q = 2 s léky, 1.6 s bylinami, 1.25 bez nich. */
+  tend(doc, c, q) {
+    c.tendedUntil = TimeSys.minutes + 60 * 14;
+    c.careQ = q * (1 + doc.skills.medicine.lvl * 0.03);
+    if (c.bleed) { c.bleed = false; c.health = Math.min(100, c.health + 10); }
+    c.addThought('tended', 'Ošetřen/a lékařem', 3, 12);
+    Game.stats.tended = (Game.stats.tended || 0) + 1;
+  },
+  status(c) {
+    const out = [];
+    if (c.bleed) out.push('krvácí');
+    if (c.disease) out.push(`${DISEASES[c.disease.id].name.toLowerCase()} (závažnost ${Math.round(c.disease.sev * 100)} %, imunita ${Math.round(c.disease.imm * 100)} %)`);
+    if (this.isTended(c)) out.push('ošetřen/a');
+    return out.join(', ');
+  },
+  pack() { return { next: this.next }; },
+  unpack(d) { if (d) this.next = d.next; else this.reset(); },
+};
+
+</script>
+  <script>
 // ===== js/fire.js =====
 'use strict';
 /**
@@ -1833,9 +2032,20 @@ const Machines = {
     s.prog = 0;
     return r.out;
   },
+  /** Políčko výstupu: před okrajem stavby ve směru otočení (u větších staveb uprostřed hrany). */
+  front(s) {
+    if (s.tiles.length === 1) return World.step(s.i, s.dir);
+    const w = World.w, dx = DIRS4[s.dir][0], dy = DIRS4[s.dir][1];
+    let best = s.tiles[0], bv = -Infinity;
+    for (const t of s.tiles) {
+      const v = (t % w) * dx + ((t / w) | 0) * dy;
+      if (v > bv) { bv = v; best = t; }
+    }
+    return World.step(best, s.dir);
+  },
   /** Políčka sousedící se stavbou (bez políčka výstupu). */
   sides(s) {
-    const out = [], w = World.w, front = BUILD[s.type].rot ? World.step(s.i, s.dir) : -1;
+    const out = [], w = World.w, front = BUILD[s.type].rot ? this.front(s) : -1;
     const own = new Set(s.tiles);
     for (const t of s.tiles) {
       const x = t % w;
@@ -1896,7 +2106,7 @@ const Machines = {
   },
   /** Vyloží hotové výrobky na políčko ve směru otočení. */
   eject(s) {
-    const front = World.step(s.i, s.dir);
+    const front = this.front(s);
     let left = 0;
     for (const k in s.out) {
       if (s.out[k] < 1) continue;
@@ -1923,6 +2133,51 @@ const Machines = {
       for (const k in s.out) outN += s.out[k];
       let ready = outN < this.OUT_CAP;
       if (!ready) s.msg = 'Výstup je plný – není kam vykládat';
+      if (m.heater) {
+        // topení: odebírá energii, jen když je kolem zima
+        s.want = World.tempAt(i) < 18 || TimeSys.temp() < 12;
+        s.on = s.want && Power.factor(s) > 0.05;
+        s.msg = !s.want ? 'Vypnuto – je teplo' : s.on ? 'Topí' : 'Bez energie';
+        if (s.on && t % 600 === 0) Maintenance.wearTime(s, 600 * 3);
+        continue;
+      }
+      if (m.radio) {
+        s.want = !Game.rescued;
+        const p = Power.factor(s);
+        s.on = s.want && p > 0.99;
+        if (!s.want) { s.msg = 'Loď přiletěla'; continue; }
+        if (!s.on) { s.msg = p > 0.05 ? `Málo energie (${Math.round(p * 100)} %) – vysílání stojí` : 'Bez energie'; continue; }
+        const before = Math.floor(s.prog * 4);
+        s.prog = Math.min(1, s.prog + 1 / (m.radio * 600));
+        s.msg = `Vysílá… ${Math.floor(s.prog * 100)} %`;
+        if (Math.floor(s.prog * 4) !== before && s.prog < 1) Game.alert(`Vysílačka: spojení navázáno z ${Math.floor(s.prog * 100)} %.`, 'info', i % World.w, (i / World.w) | 0);
+        if (s.prog >= 1) Game.rescue(s);
+        continue;
+      }
+      if (m.harvester) {
+        if (t % 60 !== 0) continue;
+        this.eject(s);
+        const job = this.fieldJob(s, m.harvester);
+        s.want = !!job;
+        const p = Power.factor(s);
+        s.on = s.want && p > 0.05;
+        if (!job) { s.msg = 'Čeká – pole v dosahu nepotřebují práci'; continue; }
+        if (!s.on) { s.msg = 'Bez energie'; continue; }
+        s.prog += p * 0.5;
+        s.msg = job.harvest ? 'Sklízí' : 'Zasévá';
+        if (s.prog >= 1) {
+          s.prog = 0;
+          if (job.harvest) {
+            const crop = World.crops[job.i];
+            World.removeCrop(job.i);
+            const y = Crops.yieldOf(crop, 6);
+            s.out[y.type] = (s.out[y.type] || 0) + y.n;
+            Game.stats.harvested += y.n;
+          } else World.setCrop(job.i, 0, World.cropType(job.i));
+          Maintenance.wear(s);
+        }
+        continue;
+      }
       if (ready && m.drill) {
         const o = World.obj[i];
         if (!o || o.type !== 'ore' || o.amount <= 0) { ready = false; s.msg = 'Ložisko je vyčerpané'; }
@@ -1951,6 +2206,20 @@ const Machines = {
         this.eject(s);
       }
     }
+  },
+
+  /** Nejbližší pole v dosahu sklízecího stroje: nejdřív zralé ke sklizni, pak prázdné k setí. */
+  fieldJob(s, r) {
+    const x0 = s.i % World.w, y0 = (s.i / World.w) | 0;
+    let sow = -1;
+    for (let y = y0 - r; y <= y0 + r; y++) for (let x = x0 - r; x <= x0 + r; x++) {
+      if (!World.inb(x, y)) continue;
+      const i = World.idx(x, y);
+      if (World.zone[i] !== 2 || Game.isReserved('o' + i)) continue;
+      if (World.ripeSet.has(i)) return { i, harvest: true };
+      if (sow < 0 && World.canSow(i) && Crops.canSowNow(World.cropType(i), i)) sow = i;
+    }
+    return sow >= 0 ? { i: sow, harvest: false } : null;
   },
 
   /** Posun pásů: každá hromádka se za jeden krok posune nejvýš o jedno políčko. */
@@ -2184,9 +2453,10 @@ const Research = {
     const unlocked = Object.keys(BUILD).filter(k => BUILD[k].tech === id).map(k => BUILD[k].name);
     Game.alert(`Výzkum dokončen: ${TECHS[id].name}` + (unlocked.length ? ` – nové stavby: ${unlocked.join(', ')}.` : '.'), 'good');
     if (UI.ready) UI.setTab(UI.tab);
+    if (id === 'colony') Game.alert('Kolonie je soběstačná! Další výzkum vede k elektřině a nakonec k vysílačce, která přivolá záchrannou loď.', 'good');
     if (!this.won && Object.keys(TECHS).every(t => this.done.has(t))) {
       this.won = true;
-      UI.victory();
+      Game.alert('Celý strom technologií je vyzkoumán. Postav vysílačku a zavolej záchranu!', 'good');
     }
   },
   pack() { return { done: [...this.done], points: this.points, current: this.current, won: this.won }; },
@@ -2432,6 +2702,7 @@ class Raider {
       if (this.cd <= 0) {
         this.cd = 42;
         tc.health -= 9 * Combat.diff().dmg;
+        if (U.chance(0.5)) Medicine.wound(tc);
         if (tc.sleeping && tc.job) tc.endJob();
         Sound.play('hit', this.x, this.y);
         if (tc.health <= 0) Game.killColonist(tc, 'v boji s nájezdníky');
@@ -2919,6 +3190,8 @@ const Quests = {
     { text: 'Dokonči první výzkum', how: 'Kolonista s prací Výzkum bádá u stolu. Doporučení: Vodní energie a Mechanika.', done: () => Research.done.size >= 1, reward: { iron: 8 } },
     { text: 'Vyrob první energii', how: 'Vodní kolo patří na mělkou vodu (světle modrá). Stroje musí být do 5 políček od zdroje nebo sloupu.', done: () => Power.supply > 0, reward: { plank: 20 } },
     { text: 'Postav první vrták', how: 'Vyzkoumej Těžební stroje a postav Vrták přímo na ložisko rudy. Šipka určuje, kam bude rudu klást.', done: () => (World.structBy.drill || { size: 0 }).size >= 1, reward: { iron: 15 } },
+    { text: 'Vyzkoumej Soběstačnou kolonii', how: 'Pokračuj ve výzkumu (Výroba → Výzkum). Otevře cestu k elektřině.', done: () => Research.done.has('colony'), reward: { iron: 20, plank: 20 } },
+    { text: 'Postav vysílačku a zavolej záchranu', how: 'Vyzkoumej Rádiové spojení, postav Vysílačku (2×2) a dej jí 40 ⚡ po dobu 48 hodin. To je cíl hry.', done: () => !!Game.rescued, reward: { meal: 20 } },
   ],
   idx: 0,
   skipped: false,
@@ -3107,7 +3380,7 @@ const Jobs = (() => {
       const out = [];
       for (const i of World.ripeSet) out.push({ type: 'harvest', i, key: 'o' + i });
       if (TimeSys.daylight() > 0.2) {
-        for (const i of World.emptyFarm) if (World.canSow(i)) out.push({ type: 'sow', i, key: 'o' + i });
+        for (const i of World.emptyFarm) if (World.canSow(i) && Crops.canSowNow(World.cropType(i), i)) out.push({ type: 'sow', i, key: 'o' + i });
       }
       for (const i of World.des.harvest) {
         const o = World.obj[i];
@@ -3117,6 +3390,11 @@ const Jobs = (() => {
       for (const a of Animals.list) {
         if (a.type === 'sheep' && a.prod >= 1 && !a.hunt) out.push({ type: 'shear', a: a.id, i: World.idx(a.tx, a.ty), key: 'a' + a.id });
       }
+      return out;
+    },
+    doctor(c) {
+      const out = [];
+      for (const p of Game.colonists) if (Medicine.needsCare(p)) out.push({ type: 'tend', p: p.id, i: World.idx(p.tx, p.ty), key: 'm' + p.id });
       return out;
     },
     hunt() {
@@ -3446,6 +3724,49 @@ const Jobs = (() => {
       }
     },
 
+    /** Ošetření pacienta: vzít léky nebo byliny (pokud jsou), dojít k němu a ošetřit. */
+    tend(c, j) {
+      const p = Game.colonistById(j.p);
+      if (!p || !Medicine.needsCare(p)) return DONE;
+      j.t = (j.t || 0) + 1;
+      if (j.t > 3000) return FAIL;
+      if (j.stage === 0) {
+        j.med = null;
+        const kind = anyItem('medicine') ? 'medicine' : anyItem('herbs') ? 'herbs' : null;
+        const src = kind ? nearestItem([kind], c) : -1;
+        if (src >= 0) { Game.reserveItem(src, 1, c); j.src = src; j.med = kind; j.stage = 1; }
+        else j.stage = 2;
+      }
+      if (j.stage === 1) {
+        c.activity = 'Jde pro léky';
+        const r = walk(c, j, ix(j.src), iy(j.src), 0, 'i' + j.src);
+        if (r === 'fail') { j.stage = 2; j.med = null; }
+        else if (r === 'moving') return;
+        else { if (!c.pickup(j.src, 1, j.med)) j.med = null; j.stage = 2; }
+      }
+      if (j.stage === 2) {
+        c.activity = 'Jde ošetřit: ' + p.first;
+        if (Math.hypot(p.x - c.x, p.y - c.y) > 1.5) {
+          if (!c.path || j.t % 40 === 0) { if (!c.pathTo(p.tx, p.ty, 1)) return FAIL; }
+          c.followPath();
+          return;
+        }
+        c.path = null;
+        j.stage = 3;
+      }
+      if (Math.hypot(p.x - c.x, p.y - c.y) > 2) { j.stage = 2; return; }
+      c.activity = 'Ošetřuje: ' + p.first;
+      c.face(p.tx, p.ty);
+      j.progress += c.work('medicine');
+      c.workFrac = j.progress / 90;
+      if (j.progress >= 90) {
+        const q = c.carry && c.carry.type === 'medicine' ? 2 : c.carry && c.carry.type === 'herbs' ? 1.6 : 1.25;
+        if (c.carry && (c.carry.type === 'medicine' || c.carry.type === 'herbs')) { c.carry.n--; if (c.carry.n <= 0) c.carry = null; }
+        Medicine.tend(c, p, q);
+        return DONE;
+      }
+    },
+
     /** Stříhání ovce. */
     shear(c, j) {
       const a = Animals.byId(j.a);
@@ -3620,11 +3941,11 @@ const Jobs = (() => {
         if (r === 'moving') return;
         j.stage = 1;
       }
-      c.activity = 'Sází brambory';
+      c.activity = 'Sází: ' + Crops.def(World.cropType(i)).name.toLowerCase();
       j.progress += c.work('grow');
       c.workFrac = j.progress / 28;
       if (j.progress >= 28) {
-        World.setCrop(i, 0);
+        World.setCrop(i, 0, World.cropType(i));
         return DONE;
       }
     },
@@ -3644,9 +3965,9 @@ const Jobs = (() => {
       c.workFrac = j.progress / 32;
       if (j.progress >= 32) {
         World.removeCrop(i);
-        const yieldN = Math.round(6 * (0.85 + c.skills.grow.lvl * 0.04));
-        World.dropItem(x, y, 'food', yieldN);
-        Game.stats.harvested += yieldN;
+        const y2 = Crops.yieldOf(cr, c.skills.grow.lvl);
+        World.dropItem(x, y, y2.type, y2.n);
+        Game.stats.harvested += y2.n;
         return DONE;
       }
     },
@@ -3748,6 +4069,7 @@ const Jobs = (() => {
         if (r === 'fail') return FAIL;
         if (r === 'moving') return;
         j.food = it.type;
+        j.fresh = World.freshness(j.i);
         if (!c.pickup(j.i, 1, it.type)) return FAIL;
         j.seat = findSeat(c);
         if (j.seat >= 0 && !Game.reserve('s' + j.seat, c)) j.seat = -1;
@@ -3767,6 +4089,7 @@ const Jobs = (() => {
       c.eating = true;
       if (j.progress >= 50) {
         c.carry = null;
+        Medicine.ate(c, j.food, j.fresh === undefined ? 1 : j.fresh);
         if (j.food === 'meal') {
           c.hunger = Math.min(100, c.hunger + 60);
           c.addThought('meal', 'Teplé jídlo', 6, 10);
@@ -3831,7 +4154,9 @@ const Jobs = (() => {
       c.activity = j.bed >= 0 ? 'Spí v posteli' : (j.collapse ? 'Zhroutil/a se vyčerpáním' : 'Spí na zemi');
       const rate = (j.bed >= 0 ? 100 / 7 : 100 / 9.5) * Config.HOURS_PER_TICK;
       c.energy = Math.min(100, c.energy + rate);
-      const wake = (!TimeSys.isNight() && c.energy >= 97) || c.hunger < 12 || (c.energy >= 100 && TimeSys.hour >= 5 && TimeSys.hour < 22);
+      const wake = j.rest ? (!c.disease || c.disease.sev < 0.25 || c.hunger < 15)
+        : (!TimeSys.isNight() && c.energy >= 97) || c.hunger < 12 || (c.energy >= 100 && TimeSys.hour >= 5 && TimeSys.hour < 22);
+      if (j.rest) c.activity = 'Leží nemocný/á v posteli';
       if (wake) {
         if (j.bed >= 0) {
           const room = World.roomAt(j.bed);
@@ -4248,6 +4573,28 @@ const Sprites = (() => {
     S.items.ammo = outline(paint(16, 16, (set, get, rect) => {
       for (const x of [3, 7, 11]) { rect(x, 6, 2, 7, [196, 150, 60]); rect(x, 4, 2, 2, [150, 156, 168]); set(x, 6, [236, 200, 110]); }
     }));
+    S.items.parts = outline(paint(16, 16, (set, get, rect) => {
+      for (const [cx, cy] of [[5, 10], [11, 6]]) for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) {
+        const d = Math.hypot(x, y), a = Math.atan2(y, x);
+        if (d > 4.2 || d < 1.3) continue;
+        if (d > 3 && Math.cos(a * 8) < 0) continue;      // zuby ozubeného kola
+        set(cx + x, cy + y, x + y < 0 ? [196, 204, 216] : [120, 128, 140]);
+      }
+      rect(9, 11, 5, 2, [176, 126, 74]); set(13, 11, [120, 128, 140]);
+    }));
+    S.items.herbs = outline(paint(16, 16, (set) => {
+      for (let k = 0; k < 4; k++) {
+        const x0 = 4 + k * 2.5;
+        for (let y = 5; y < 14; y++) set(x0 + (y > 9 ? 0 : (k & 1)), y, [70, 120, 60]);
+        set(x0 - 1, 7 + k, [100, 160, 80]); set(x0 + 1, 9 - k % 2, [100, 160, 80]);
+        set(x0, 4, [170, 110, 210]); set(x0 + 1, 5, [200, 150, 230]);
+      }
+      for (let x = 3; x < 13; x++) set(x, 11, [176, 126, 74]);
+    }));
+    S.items.medicine = outline(paint(16, 16, (set, get, rect) => {
+      rect(4, 5, 8, 9, [236, 232, 220]); rect(4, 5, 8, 1, [250, 248, 240]); rect(6, 2, 4, 3, [176, 126, 74]);
+      rect(7, 7, 2, 5, [220, 60, 60]); rect(5, 9, 6, 1, [220, 60, 60]); rect(5, 9, 6, 2, [220, 60, 60]);
+    }));
     S.items.meal = outline(paint(16, 16, (set) => {
       for (let y = 7; y < 14; y++) for (let x = 2; x < 14; x++) {
         const dx = (x - 7.5) / 6, dy = (y - 8) / 6;
@@ -4391,6 +4738,43 @@ const Sprites = (() => {
     const metal = [120, 126, 138], metalL = [176, 184, 196], metalD = [72, 78, 90];
     const wood = [150, 104, 60], woodL = [186, 138, 86], woodD = [100, 66, 38];
     const stoneC = [140, 136, 130], stoneL = [176, 172, 164], stoneD = [92, 88, 84];
+    // ----- pozdní hra a lékárna -----
+    S.build.apothecary = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 3, 14, 13, [150, 104, 60]); rect(1, 3, 14, 1, [186, 138, 86]);
+      for (const y of [6, 10]) rect(2, y, 12, 1, [100, 66, 38]);
+      for (const [x, y, c] of [[3, 4, [120, 190, 120]], [6, 4, [200, 120, 220]], [10, 4, [236, 232, 220]], [4, 8, [220, 80, 80]], [8, 8, [150, 200, 230]], [11, 8, [120, 190, 120]]]) rect(x, y, 2, 2, c);
+      rect(3, 11, 10, 5, [176, 126, 74]); rect(7, 12, 2, 3, [220, 60, 60]); rect(6, 13, 4, 1, [220, 60, 60]);
+    }));
+    S.build.machineshop = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 7, 14, 5, metal); rect(1, 7, 14, 1, metalL); rect(1, 11, 14, 1, metalD);
+      rect(2, 12, 2, 4, metalD); rect(12, 12, 2, 4, metalD);
+      rect(9, 1, 2, 6, metalD); rect(7, 1, 6, 2, metal); rect(9, 5, 2, 2, [255, 220, 90]);
+      rect(2, 4, 5, 3, [120, 80, 44]); rect(3, 5, 3, 1, [200, 206, 216]);
+    }));
+    S.build.heater = outline(paint(16, 16, (set, get, rect) => {
+      rect(2, 3, 12, 12, metal); rect(2, 3, 12, 1, metalL); rect(2, 14, 12, 1, metalD);
+      for (let x = 4; x < 13; x += 2) rect(x, 5, 1, 8, [230, 110, 50]);
+      rect(11, 1, 2, 2, metalD);
+    }));
+    S.build.assembler = outline(paint(32, 16, (set, get, rect) => {
+      rect(1, 4, 30, 11, metal); rect(1, 4, 30, 1, metalL); rect(1, 14, 30, 1, metalD);
+      rect(3, 6, 26, 4, [58, 60, 68]);
+      for (let x = 4; x < 28; x += 6) { rect(x, 1, 2, 6, metalD); rect(x - 1, 6, 4, 2, [255, 220, 90]); }
+      rect(4, 11, 6, 2, [176, 126, 74]); rect(22, 11, 6, 2, [196, 204, 216]);
+    }));
+    S.build.harvester = outline(paint(16, 16, (set, get, rect) => {
+      rect(1, 4, 14, 9, [196, 150, 52]); rect(1, 4, 14, 1, [236, 196, 90]); rect(1, 12, 14, 1, [130, 96, 30]);
+      rect(9, 1, 5, 4, [70, 110, 150]); rect(10, 2, 3, 2, [160, 210, 240]);
+      for (let x = 1; x < 15; x += 2) set(x, 13, metalL);
+      for (const cx of [4, 12]) rect(cx - 2, 13, 4, 3, [50, 46, 44]);
+    }));
+    S.build.radio = outline(paint(32, 32, (set, get, rect) => {
+      rect(4, 22, 24, 10, [140, 136, 130]); rect(4, 22, 24, 1, [176, 172, 164]);
+      rect(8, 24, 8, 6, [58, 60, 68]); rect(9, 25, 2, 2, [126, 220, 126]); rect(12, 25, 2, 2, [255, 200, 80]);
+      for (let y = 2; y < 22; y++) { const w = Math.max(1, Math.floor((22 - y) / 5)); set(16 - w, y, metalD); set(16 + w, y, metalD); if (y % 4 === 0) rect(16 - w, y, w * 2 + 1, 1, metal); }
+      rect(15, 0, 3, 3, [230, 70, 60]);
+      for (let a = 0; a < 7; a++) { set(21 + a, 6 - Math.round(Math.sin(a / 2) * 2), metalL); }
+    }));
     S.build.saw = outline(paint(16, 16, (set, get, rect) => {
       rect(1, 7, 14, 5, wood); rect(1, 7, 14, 1, woodL); rect(1, 11, 14, 1, woodD);
       rect(2, 12, 2, 4, woodD); rect(12, 12, 2, 4, woodD);
@@ -4535,6 +4919,30 @@ const Sprites = (() => {
         set(x, y, col);
       }
     });
+    const make = (leaf, fruit, kind) => [0, 1, 2, 3].map(n => outline(paint(16, 16, (set) => {
+      const plants = [[4, 5], [11, 5], [4, 12], [11, 12]];
+      for (const [px, py] of plants) {
+        if (n === 0) { set(px, py, leaf[1]); set(px + 1, py - 1, leaf[2]); continue; }
+        if (kind === 'corn') {
+          // vysoké stonky s klasy
+          const hgt = n === 1 ? 3 : n === 2 ? 5 : 6;
+          for (let k = 0; k < hgt; k++) { set(px, py + 1 - k, leaf[1]); if (k % 2) set(px + (k & 2 ? 1 : -1), py + 1 - k, leaf[2]); }
+          if (n === 3) { set(px + 1, py - 2, fruit[0]); set(px + 1, py - 3, fruit[1]); set(px + 1, py - 1, fruit[0]); }
+          continue;
+        }
+        const r = n === 1 ? 1.6 : n === 2 ? 2.6 : 3.2;
+        for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) {
+          if (Math.hypot(x, y) > r + (H(x + px, y + py, 4) - 0.5)) continue;
+          set(px + x, py + y, leaf[Math.max(0, Math.min(2, Math.round(1 - (x + y) / 4)))]);
+        }
+        if (n === 3) {
+          if (kind === 'cabbage') { for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) set(px + x, py + y, Math.abs(x) + Math.abs(y) < 2 ? fruit[1] : fruit[0]); }
+          else { set(px - 1, py - 2, fruit[1]); set(px + 2, py, fruit[0]); set(px + 1, py + 3, fruit[0]); }
+        }
+      }
+    }), [30, 60, 26], 255));
+    S.crops = {};
+    for (const k of CROP_KEYS) S.crops[k] = make(CROPS[k].leaf, CROPS[k].fruit, k);
     const leaf = [[54, 120, 50], [74, 146, 60], [100, 170, 72]];
     const stage = (n) => outline(paint(16, 16, (set) => {
       const plants = [[4, 5], [11, 5], [4, 12], [11, 12]];
@@ -4735,6 +5143,7 @@ const Sprites = (() => {
       for (let k = 0; k < 12; k++) { set(2 + k, 13 - k, [150, 100, 56]); set(3 + k, 13 - k, [120, 80, 44]); }
       rect(11, 1, 4, 2, [210, 214, 224]); rect(13, 1, 2, 4, [210, 214, 224]); set(12, 3, [210, 214, 224]);
     }));
+    I.parts = S.items.parts; I.herbs = S.items.herbs; I.medicine = S.items.medicine;
     I.zone_pasture = outline(paint(16, 16, (set, get, rect) => {
       rect(1, 11, 14, 4, [96, 150, 70]); rect(1, 11, 14, 1, [126, 180, 90]);
       for (const x of [2, 7, 12]) { rect(x, 5, 2, 8, [176, 126, 74]); set(x, 5, [206, 158, 100]); }
@@ -4838,6 +5247,9 @@ class Colonist {
     this.health = 100;
     this.dead = false;
     this.warmth = 100;       // tělesné teplo 0..100
+    this.disease = null;     // {id, sev, imm}
+    this.bleed = false;
+    this.tendedUntil = 0;
     this.coat = false;       // má teplé oblečení
     this.bow = false;        // má kuši
     this.mood = 60;
@@ -4872,6 +5284,7 @@ class Colonist {
     this.working = true;
     let f = (skill ? this.skillFactor(skill) : 1) * this.moodFactor() * (this.trait.work || 1);
     if (this.hunger < 5) f *= 0.7;
+    if (this.disease) f *= 0.75;
     if (skill) this.gainXp(skill, 0.07);
     // zvuk práce podle druhu úkolu
     if ((this.sndT = (this.sndT || 0) + 1) % 26 === 0 && this.job) {
@@ -4909,6 +5322,8 @@ class Colonist {
     const roofed = World.isRoofed(here);
     const temp = World.tempAt(here);
     if (this.health < 40) out.push({ label: 'Podlomené zdraví', val: -8 });
+    if (this.disease) out.push({ label: DISEASES[this.disease.id].name, val: -6 });
+    if (this.bleed) out.push({ label: 'Bolestivá rána', val: -5 });
     if (Weather.rain > 0.3 && !roofed) out.push({ label: temp < 0 ? 'Sněží mu/jí za krk' : 'Moknutí v dešti', val: -4 });
     if (this.warmth < 20) out.push({ label: 'Podchlazení', val: -12 });
     else if (this.warmth < 55) out.push({ label: 'Prochladl/a', val: -6 });
@@ -4950,8 +5365,15 @@ class Colonist {
     if (this.warmth < 20) { d -= 2 * hours; cause = 'podchlazením'; }
     if (this.warmth < 45 && amb < comfort) Game.notifyOnce('cold' + this.id, `${this.first} prochládá! Postav vytápěnou místnost (zdi, dveře, ohniště uvnitř) nebo ušij teplé oblečení.`, 'warn', 360);
     if (this.hunger <= 0) { d -= 4.5 * hours; cause = 'hladem'; }
+    // nemoci a rány (počítá se po hodinách)
+    this.medT = (this.medT || 0) + hours;
+    while (this.medT >= 1) {
+      this.medT -= 1;
+      const m = Medicine.hourly(this);
+      if (m > 0) { d -= m; cause = this.disease ? DISEASES[this.disease.id].name.toLowerCase() === 'zánět rány' ? 'na zánět rány' : 'na ' + DISEASES[this.disease.id].name.toLowerCase() : 'vykrvácením'; }
+    }
     if (this.energy <= 0) { d -= 2 * hours; cause = cause || 'vyčerpáním'; }
-    if (d === 0 && this.hunger > 30 && this.energy > 15) d = (this.sleeping ? 3 : 1.5) * hours;
+    if (d === 0 && this.hunger > 30 && this.energy > 15 && !this.bleed && !(this.disease && this.disease.sev > 0.6)) d = (this.sleeping ? 3 : 1.5) * hours;
     if (d < 0 && this.health >= 50 && this.health + d < 50) Game.alert(`${this.first} je ve vážném stavu – umírá ${cause}!`, 'warn', this.tx, this.ty);
     this.health = U.clamp(this.health + d, 0, 100);
     if (this.health <= 0) Game.killColonist(this, cause || 'vyčerpáním');
@@ -5076,6 +5498,11 @@ class Colonist {
     if (this.energy < 25 || (night && this.energy < 92)) {
       this.startJob({ type: 'sleep', bed: Jobs.findBed(this) });
       return;
+    }
+    // vážně nemocný si lehne do postele
+    if (this.disease && this.disease.sev > 0.35) {
+      const bed = Jobs.findBed(this);
+      if (bed >= 0) { this.startJob({ type: 'sleep', bed, rest: true }); return; }
     }
     // výbava: teplé oblečení a kuše, pokud jsou ve skladu
     const gear = !this.coat && Jobs.anyItem('coat') ? 'coat' : !this.bow && Jobs.anyItem('bow') ? 'bow' : null;
@@ -6137,7 +6564,7 @@ const Renderer = {
         if (cr) {
           this.img(Sprites.tilled, wx, wy, TS, TS);
           const st = cr.g >= 1 ? 3 : cr.g > 0.6 ? 2 : cr.g > 0.25 ? 1 : 0;
-          this.img(Sprites.crop[st], wx, wy, TS, TS);
+          this.img((Sprites.crops[cr.t] || Sprites.crop)[st], wx, wy, TS, TS);
         }
         const bp = World.bp[i];
         if (bp && BUILD[bp.type].layer === 'floor') this.drawBlueprint(bp, wx, wy);
@@ -6864,7 +7291,7 @@ const UI = {
   TABS: [
     { id: 'orders', label: 'Příkazy', icon: 'chop', tools: ['select', 'chop', 'mine', 'harvest', 'hunt', 'decon', 'cancel'] },
     { id: 'build', label: 'Stavba', icon: 'wall_wood', tools: ['wall_wood', 'wall_stone', 'door', 'floor_wood', 'floor_stone', 'bed', 'campfire', 'table', 'chair', 'chest', 'lamp'] },
-    { id: 'prod', label: 'Výroba', icon: 'belt', tools: ['saw', 'furnace', 'tailor', 'armory', 'research', 'belt', 'splitter', 'sorter', 'tunnel', 'rail', 'cartstop', 'drill', 'autosaw', 'autofurnace', 'pole', 'waterwheel', 'windmill', 'boiler', 'turret', 'gate'],
+    { id: 'prod', label: 'Výroba', icon: 'belt', tools: ['saw', 'furnace', 'tailor', 'armory', 'apothecary', 'machineshop', 'research', 'belt', 'splitter', 'sorter', 'tunnel', 'rail', 'cartstop', 'drill', 'autosaw', 'autofurnace', 'assembler', 'harvester', 'pole', 'waterwheel', 'windmill', 'boiler', 'heater', 'turret', 'gate', 'radio'],
       actions: [{ icon: 'research_btn', label: 'Výzkum', run: () => UI.openResearch() }, { icon: 'power_btn', label: 'Energie', run: () => UI.openPower() },
         { icon: 'pollution_btn', label: 'Znečištění', run: () => { Pollution.show = !Pollution.show; UI.toast(Pollution.show ? 'Vrstva znečištění zapnuta (fialová = špinavý vzduch).' : 'Vrstva znečištění vypnuta.', 'info'); } }] },
     { id: 'zones', label: 'Zóny', icon: 'zone_farm', tools: ['zone_stock', 'zone_farm', 'zone_pasture', 'coop', 'sheepfold', 'zone_clear'] },
@@ -7085,7 +7512,7 @@ const UI = {
       m.style.width = c.mood + '%';
       m.style.background = this.moodColor(c.mood);
       card.classList.toggle('sel', !!(Game.selected && Game.selected.c === c));
-      card.classList.toggle('alert', c.hunger < 15 || c.energy < 10 || c.health < 50 || c.inBreak());
+      card.classList.toggle('alert', c.hunger < 15 || c.energy < 10 || c.health < 50 || c.inBreak() || c.bleed || !!(c.disease && c.disease.sev > 0.5));
       card.title = `${c.name} – ${c.activity}`;
     }
   },
@@ -7123,7 +7550,8 @@ const UI = {
       this.$('pFollow').onclick = () => { Camera.follow = Camera.follow === c ? null : c; };
       this.$('pPrio').onclick = () => this.openPriorities();
     }
-    this.$('pAct').textContent = (c.carry ? `[${ITEMS[c.carry.type].name} ×${c.carry.n}] ` : '') + c.activity + (c.coat || c.bow ? ' · výbava: ' + [c.coat && 'oblečení', c.bow && 'kuše'].filter(Boolean).join(', ') : '');
+    const med = Medicine.status(c);
+    this.$('pAct').textContent = (med ? '[' + med + '] ' : '') + (c.carry ? `[${ITEMS[c.carry.type].name} ×${c.carry.n}] ` : '') + c.activity + (c.coat || c.bow ? ' · výbava: ' + [c.coat && 'oblečení', c.bow && 'kuše'].filter(Boolean).join(', ') : '');
     this.$('pFollow').textContent = Camera.follow === c ? 'Nesledovat' : 'Sledovat';
     this.$('pNeeds').innerHTML =
       this.bar('Zdraví', c.health, c.health < 40 ? '#e5534b' : '#d9534f') +
@@ -7223,7 +7651,7 @@ const UI = {
       rows.push(['Materiál', Object.keys(cost).map(m => `${ITEMS[m].name} ${bp.del[m] || 0}/${cost[m]}`).join(', ')]);
     }
     const cr = World.crops[i];
-    if (cr) rows.push(['Brambory', cr.g >= 1 ? 'zralé ke sklizni' : `roste ${Math.round(cr.g * 100)} %`]);
+    if (cr) rows.push([Crops.def(cr.t).name, cr.g >= 1 ? 'zralé ke sklizni' : `roste ${Math.round(cr.g * 100)} %` + (Crops.growFactor(cr.t, World.roof[i] ? World.tempAt(i) : TimeSys.temp(), !!World.roof[i]) <= 0 ? ' – teď neroste (zima / chlad)' : '')]);
     const it = World.items[i];
     if (it) {
       const fr = World.freshness(i);
@@ -7235,8 +7663,14 @@ const UI = {
     else if (World.isRoofed(i)) rows.push(['Střecha', 'ano']);
     rows.push(['Teplota', Math.round(World.tempAt(i)) + ' °C']);
     if (Fire.burning(i)) rows.push(['Požár', 'hoří!']);
-    // filtr skladu / truhly
+    // filtr skladu / truhly, volba plodiny pole
     let filterHtml = '';
+    if (World.zone[i] === 2) {
+      const cur = World.cropType(i);
+      filterHtml = `<div class="psec">Co se tu pěstuje (celé pole)</div><div class="filters crops">` + CROP_KEYS.map((k, n) =>
+        `<button class="fbtn ${cur === k ? 'on' : ''}" data-act="crop:${n}"><img class="pix" src="${Sprites.toURL(Sprites.crops[k][3], 2)}" alt=""><span>${CROPS[k].name}<small>${CROPS[k].season}</small></span></button>`).join('') +
+        `</div><div class="mnote">Už zasazené plodiny dorostou; nový druh se zaseje po sklizni.${World.roof[i] ? ' Pole je v místnosti (skleník) – roste i v zimě, když je vytopená.' : ''}</div>`;
+    }
     if (World.isStock(i)) {
       const f = World.filter[i];
       filterHtml = `<div class="psec">Co se sem smí ukládat</div><div class="filters">` + ITEM_KEYS.map(k =>
@@ -7252,6 +7686,7 @@ const UI = {
       const act = e.target.closest && e.target.closest('[data-act]');
       if (!act) return;
       const cur = World.struct[i], a = act.dataset.act;
+      if (a.startsWith('crop:')) { for (const q of World.zoneRegion(i)) World.cropKind[q] = +a.slice(5); p.dataset.kind = ''; this.tileInfo(p, x, y); return; }
       if (!cur) return;
       if (a.startsWith('sf:')) cur.filter = a.slice(3) || null;
       else if (a === 'stop') { cur.unload = !cur.unload; Carts.sync(); }
@@ -7260,7 +7695,7 @@ const UI = {
       p.dataset.kind = '';
       this.tileInfo(p, x, y);
     };
-    if (filterHtml) {
+    if (filterHtml && World.isStock(i)) {
       const region = World.stockRegion(i);
       const cur = () => (World.filter[i] & FILTER_CUSTOM) ? World.filter[i] : (FILTER_CUSTOM | (FILTER_CUSTOM - 1));
       const apply = (mask) => { World.setFilter(region, mask); this.tileInfo(p, x, y); };
@@ -7692,14 +8127,16 @@ const UI = {
   /** Vítězství – dokončený strom technologií. Hrát se dá dál. */
   victory() {
     const m = this.$('modal'), st = Game.stats;
-    m.innerHTML = `<div class="mbox help"><div class="mhead"><b>Kolonie je soběstačná!</b></div>
-      <div class="hbody"><p>Dokončil/a jsi celý výzkum ${TimeSys.day}. dne. Stroje teď pracují za kolonisty – cíl hry je splněn.</p>
+    m.innerHTML = `<div class="mbox help"><div class="mhead"><b>Záchrana!</b></div>
+      <div class="hbody"><p>Vysílačka dovysílala a ${TimeSys.day}. dne přistála záchranná loď. Kolonie přežila ${TimeSys.year > 1 ? TimeSys.year - 1 + ' rok' + (TimeSys.year > 2 ? 'y' : '') + ' a ' : ''}${TimeSys.seasonName.toLowerCase()} – cíl hry je splněn.</p>
       <table class="ttab">
         <tr><td>Kolonistů</td><td>${Game.colonists.length}</td></tr>
         <tr><td>Postavené stavby</td><td>${st.built}</td></tr>
         <tr><td>Výrobků ze strojů</td><td>${st.machined}</td></tr>
         <tr><td>Výrobků z dílen</td><td>${st.crafted}</td></tr>
-      </table></div><div class="menu"><button id="mBack">Hrát dál</button></div></div>`;
+        <tr><td>Odražené nájezdy</td><td>${Combat.count}</td></tr>
+        <tr><td>Padlí</td><td>${st.deaths.length}</td></tr>
+      </table><p>Můžeš hrát dál – kolonie zůstává tvoje.</p></div><div class="menu"><button id="mBack">Hrát dál</button></div></div>`;
     m.classList.remove('hidden');
     this.$('mBack').onclick = () => m.classList.add('hidden');
   },
@@ -7824,7 +8261,9 @@ const Save = {
     for (const i of W.itemSet) { const it = W.items[i]; items.push([i, it.type, it.n, +(it.age || 0).toFixed(2)]); }
     const filter = [];
     for (const i of W.stockTiles) if (W.filter[i]) filter.push([i, W.filter[i]]);
-    for (const i of W.cropSet) crops.push([i, +W.crops[i].g.toFixed(4)]);
+    for (const i of W.cropSet) crops.push([i, +W.crops[i].g.toFixed(4), W.crops[i].t]);
+    const kinds = [];
+    for (const i of W.farmTiles) if (W.cropKind[i]) kinds.push([i, W.cropKind[i]]);
     for (const i of W.bpSet) bp.push([i, W.bp[i].type, W.bp[i].del, W.bp[i].dir || 0]);
     // pořadí množin závisí na historii → seřadit, ať je uložení deterministické
     for (const arr of [struct, items, crops, bp]) arr.sort((p, q) => p[0] - q[0]);
@@ -7832,6 +8271,7 @@ const Save = {
     return {
       v: this.VERSION,
       seed: Game.seed,
+      filterV: 2,
       opts: Game.opts,
       quests: Quests.pack(),
       history: Game.history,
@@ -7844,7 +8284,7 @@ const Save = {
       tick: Game.tickCount,
       speed: Game.lastSpeed,
       cam: { x: Camera.x, y: Camera.y, zoom: Camera.zoom },
-      world: { objRemoved, objSet, struct, floor, items, crops, bp, stock, farm, pasture, filter },
+      world: { objRemoved, objSet, struct, floor, items, crops, bp, stock, farm, pasture, filter, kinds },
       fire: [...Fire.tiles].map(([i, f]) => [i, +f.t.toFixed(2)]),
       animals: Animals.pack(),
       events: Events.pack(),
@@ -7855,7 +8295,8 @@ const Save = {
       trade: Trade.pack(),
       combat: Combat.pack(),
       carts: Carts.pack(),
-      peaceful: Game.peaceful, difficulty: Game.difficulty,
+      medicine: Medicine.pack(),
+      peaceful: Game.peaceful, difficulty: Game.difficulty, rescued: Game.rescued,
       colonists: Game.colonists.map(c => this.packColonist(c)),
     };
   },
@@ -7868,6 +8309,7 @@ const Save = {
       x: c.x, y: c.y, dir: c.dir, skills, priorities: c.priorities,
       hunger: c.hunger, energy: c.energy, mood: c.mood, health: c.health, thoughts: c.thoughts,
       carry: c.carry, breakUntil: c.breakUntil, warmth: c.warmth, coat: c.coat, bow: c.bow, rel: c.rel,
+      disease: c.disease, bleed: c.bleed, tendedUntil: c.tendedUntil, careQ: c.careQ,
     };
   },
   unpackColonist(d) {
@@ -7888,6 +8330,7 @@ const Save = {
     c.warmth = d.warmth !== undefined ? d.warmth : 100;
     c.coat = !!d.coat; c.bow = !!d.bow;
     c.rel = d.rel || {};
+    c.disease = d.disease || null; c.bleed = !!d.bleed; c.tendedUntil = d.tendedUntil || 0; c.careQ = d.careQ;
     if (!World.canWalk(c.tx, c.ty)) { const p = World.nearestWalkable(c.tx, c.ty); c.x = p.x + 0.5; c.y = p.y + 0.5; }
     return c;
   },
@@ -7912,8 +8355,11 @@ const Save = {
     for (const [i, type, decon] of w.floor) W.floor[i] = { type, decon: !!decon };
     for (const [i, type, k, age] of w.items) if (ITEMS[type]) W.items[i] = { type, n: k, age: age || 0 };
     W.filter.fill(0);
-    for (const [i, m] of w.filter || []) W.filter[i] = m;
-    for (const [i, g] of w.crops) W.crops[i] = { g };
+    // starší uložení měla příznak vlastního filtru v bitu 15
+    for (const [i, m] of w.filter || []) W.filter[i] = d.filterV === 2 ? m : ((m & 0x8000) ? ((m & 0x7fff) | FILTER_CUSTOM) : m);
+    W.cropKind.fill(0);
+    for (const [i, k] of w.kinds || []) W.cropKind[i] = k;
+    for (const [i, g, t] of w.crops) W.crops[i] = { g, t: t || 'potato' };
     for (const [i, type, del, dir] of w.bp) { if (BUILD[type]) { W.placeBlueprint(i, type, dir || 0); W.bp[i].del = del || {}; } }
     for (const i of w.stock) W.zone[i] = 1;
     for (const i of w.farm) W.zone[i] = 2;
@@ -7935,9 +8381,11 @@ const Save = {
     Trade.unpack(d.trade);
     Combat.unpack(d.combat);
     Carts.unpack(d.carts);
+    Medicine.unpack(d.medicine);
     Quests.unpack(d.quests);
     Game.history = d.history || [];
     Game.alerts = d.alerts || [];
+    Game.rescued = !!d.rescued;
     Game.peaceful = !!d.peaceful; Game.difficulty = d.difficulty || 'normal';
     Power.reset();
     Game.tickCount = d.tick || 0;
@@ -8047,6 +8495,7 @@ const Game = {
     for (const k of ITEM_KEYS) this.resType[k] = 0;
     this.tickCount = 0; this.pending = null;
     this.over = false;
+    this.rescued = false;
     this.alerts = [];
     this.shots = [];
     this.stats = { built: 0, chopped: 0, mined: 0, cooked: 0, harvested: 0, cropsEaten: 0, joined: 0, crafted: 0, machined: 0, deaths: [] };
@@ -8055,7 +8504,7 @@ const Game = {
     this.nextId = this.colonists.length;
     Quests.reset();
     Weather.reset();
-    Events.reset(); Trade.reset(); Combat.reset(); Carts.reset();
+    Events.reset(); Trade.reset(); Combat.reset(); Carts.reset(); Medicine.reset();
     Camera.zoom = Config.ZOOM_DEFAULT;
     Camera.centerTile(World.start.x, World.start.y + 1);
   },
@@ -8158,6 +8607,13 @@ const Game = {
     if (this.alerts.length > 40) this.alerts.shift();
     UI.toast(msg, kind);
   },
+  /** Vysílačka dovysílala → záchranná loď přiletěla. Cíl hry splněn, hrát se dá dál. */
+  rescue(s) {
+    if (this.rescued) return;
+    this.rescued = true;
+    this.alert('Záchranná loď přistála! Kolonisté jsou zachráněni – cíl hry splněn.', 'good', s.i % World.w, (s.i / World.w) | 0);
+    UI.victory();
+  },
   /** Hodinový vzorek zásob pro graf (posledních 14 dní). */
   sample() {
     const row = { t: Math.round(TimeSys.minutes), n: Game.colonists.length };
@@ -8253,7 +8709,7 @@ const Game = {
     this.tickCount++;
     const hourBefore = TimeSys.lastHour;
     TimeSys.tick();
-    if (TimeSys.lastHour !== hourBefore) { this.sample(); Events.hourly(); Animals.hourly(); Trade.hourly(); Combat.hourly(); Social.hourly(); Save.auto(); }   // jednou za herní hodinu
+    if (TimeSys.lastHour !== hourBefore) { this.sample(); Events.hourly(); Animals.hourly(); Trade.hourly(); Combat.hourly(); Social.hourly(); Medicine.events(); Save.auto(); }   // jednou za herní hodinu
     Weather.tick();
     if (this.tickCount % 30 === 0) {
       const hours = 30 * Config.HOURS_PER_TICK;

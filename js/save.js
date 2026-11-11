@@ -43,7 +43,9 @@ const Save = {
     for (const i of W.itemSet) { const it = W.items[i]; items.push([i, it.type, it.n, +(it.age || 0).toFixed(2)]); }
     const filter = [];
     for (const i of W.stockTiles) if (W.filter[i]) filter.push([i, W.filter[i]]);
-    for (const i of W.cropSet) crops.push([i, +W.crops[i].g.toFixed(4)]);
+    for (const i of W.cropSet) crops.push([i, +W.crops[i].g.toFixed(4), W.crops[i].t]);
+    const kinds = [];
+    for (const i of W.farmTiles) if (W.cropKind[i]) kinds.push([i, W.cropKind[i]]);
     for (const i of W.bpSet) bp.push([i, W.bp[i].type, W.bp[i].del, W.bp[i].dir || 0]);
     // pořadí množin závisí na historii → seřadit, ať je uložení deterministické
     for (const arr of [struct, items, crops, bp]) arr.sort((p, q) => p[0] - q[0]);
@@ -51,6 +53,7 @@ const Save = {
     return {
       v: this.VERSION,
       seed: Game.seed,
+      filterV: 2,
       opts: Game.opts,
       quests: Quests.pack(),
       history: Game.history,
@@ -63,7 +66,7 @@ const Save = {
       tick: Game.tickCount,
       speed: Game.lastSpeed,
       cam: { x: Camera.x, y: Camera.y, zoom: Camera.zoom },
-      world: { objRemoved, objSet, struct, floor, items, crops, bp, stock, farm, pasture, filter },
+      world: { objRemoved, objSet, struct, floor, items, crops, bp, stock, farm, pasture, filter, kinds },
       fire: [...Fire.tiles].map(([i, f]) => [i, +f.t.toFixed(2)]),
       animals: Animals.pack(),
       events: Events.pack(),
@@ -74,7 +77,8 @@ const Save = {
       trade: Trade.pack(),
       combat: Combat.pack(),
       carts: Carts.pack(),
-      peaceful: Game.peaceful, difficulty: Game.difficulty,
+      medicine: Medicine.pack(),
+      peaceful: Game.peaceful, difficulty: Game.difficulty, rescued: Game.rescued,
       colonists: Game.colonists.map(c => this.packColonist(c)),
     };
   },
@@ -87,6 +91,7 @@ const Save = {
       x: c.x, y: c.y, dir: c.dir, skills, priorities: c.priorities,
       hunger: c.hunger, energy: c.energy, mood: c.mood, health: c.health, thoughts: c.thoughts,
       carry: c.carry, breakUntil: c.breakUntil, warmth: c.warmth, coat: c.coat, bow: c.bow, rel: c.rel,
+      disease: c.disease, bleed: c.bleed, tendedUntil: c.tendedUntil, careQ: c.careQ,
     };
   },
   unpackColonist(d) {
@@ -107,6 +112,7 @@ const Save = {
     c.warmth = d.warmth !== undefined ? d.warmth : 100;
     c.coat = !!d.coat; c.bow = !!d.bow;
     c.rel = d.rel || {};
+    c.disease = d.disease || null; c.bleed = !!d.bleed; c.tendedUntil = d.tendedUntil || 0; c.careQ = d.careQ;
     if (!World.canWalk(c.tx, c.ty)) { const p = World.nearestWalkable(c.tx, c.ty); c.x = p.x + 0.5; c.y = p.y + 0.5; }
     return c;
   },
@@ -131,8 +137,11 @@ const Save = {
     for (const [i, type, decon] of w.floor) W.floor[i] = { type, decon: !!decon };
     for (const [i, type, k, age] of w.items) if (ITEMS[type]) W.items[i] = { type, n: k, age: age || 0 };
     W.filter.fill(0);
-    for (const [i, m] of w.filter || []) W.filter[i] = m;
-    for (const [i, g] of w.crops) W.crops[i] = { g };
+    // starší uložení měla příznak vlastního filtru v bitu 15
+    for (const [i, m] of w.filter || []) W.filter[i] = d.filterV === 2 ? m : ((m & 0x8000) ? ((m & 0x7fff) | FILTER_CUSTOM) : m);
+    W.cropKind.fill(0);
+    for (const [i, k] of w.kinds || []) W.cropKind[i] = k;
+    for (const [i, g, t] of w.crops) W.crops[i] = { g, t: t || 'potato' };
     for (const [i, type, del, dir] of w.bp) { if (BUILD[type]) { W.placeBlueprint(i, type, dir || 0); W.bp[i].del = del || {}; } }
     for (const i of w.stock) W.zone[i] = 1;
     for (const i of w.farm) W.zone[i] = 2;
@@ -154,9 +163,11 @@ const Save = {
     Trade.unpack(d.trade);
     Combat.unpack(d.combat);
     Carts.unpack(d.carts);
+    Medicine.unpack(d.medicine);
     Quests.unpack(d.quests);
     Game.history = d.history || [];
     Game.alerts = d.alerts || [];
+    Game.rescued = !!d.rescued;
     Game.peaceful = !!d.peaceful; Game.difficulty = d.difficulty || 'normal';
     Power.reset();
     Game.tickCount = d.tick || 0;

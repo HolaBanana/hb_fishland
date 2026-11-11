@@ -32,6 +32,9 @@ class Colonist {
     this.health = 100;
     this.dead = false;
     this.warmth = 100;       // tělesné teplo 0..100
+    this.disease = null;     // {id, sev, imm}
+    this.bleed = false;
+    this.tendedUntil = 0;
     this.coat = false;       // má teplé oblečení
     this.bow = false;        // má kuši
     this.mood = 60;
@@ -66,6 +69,7 @@ class Colonist {
     this.working = true;
     let f = (skill ? this.skillFactor(skill) : 1) * this.moodFactor() * (this.trait.work || 1);
     if (this.hunger < 5) f *= 0.7;
+    if (this.disease) f *= 0.75;
     if (skill) this.gainXp(skill, 0.07);
     // zvuk práce podle druhu úkolu
     if ((this.sndT = (this.sndT || 0) + 1) % 26 === 0 && this.job) {
@@ -103,6 +107,8 @@ class Colonist {
     const roofed = World.isRoofed(here);
     const temp = World.tempAt(here);
     if (this.health < 40) out.push({ label: 'Podlomené zdraví', val: -8 });
+    if (this.disease) out.push({ label: DISEASES[this.disease.id].name, val: -6 });
+    if (this.bleed) out.push({ label: 'Bolestivá rána', val: -5 });
     if (Weather.rain > 0.3 && !roofed) out.push({ label: temp < 0 ? 'Sněží mu/jí za krk' : 'Moknutí v dešti', val: -4 });
     if (this.warmth < 20) out.push({ label: 'Podchlazení', val: -12 });
     else if (this.warmth < 55) out.push({ label: 'Prochladl/a', val: -6 });
@@ -144,8 +150,15 @@ class Colonist {
     if (this.warmth < 20) { d -= 2 * hours; cause = 'podchlazením'; }
     if (this.warmth < 45 && amb < comfort) Game.notifyOnce('cold' + this.id, `${this.first} prochládá! Postav vytápěnou místnost (zdi, dveře, ohniště uvnitř) nebo ušij teplé oblečení.`, 'warn', 360);
     if (this.hunger <= 0) { d -= 4.5 * hours; cause = 'hladem'; }
+    // nemoci a rány (počítá se po hodinách)
+    this.medT = (this.medT || 0) + hours;
+    while (this.medT >= 1) {
+      this.medT -= 1;
+      const m = Medicine.hourly(this);
+      if (m > 0) { d -= m; cause = this.disease ? DISEASES[this.disease.id].name.toLowerCase() === 'zánět rány' ? 'na zánět rány' : 'na ' + DISEASES[this.disease.id].name.toLowerCase() : 'vykrvácením'; }
+    }
     if (this.energy <= 0) { d -= 2 * hours; cause = cause || 'vyčerpáním'; }
-    if (d === 0 && this.hunger > 30 && this.energy > 15) d = (this.sleeping ? 3 : 1.5) * hours;
+    if (d === 0 && this.hunger > 30 && this.energy > 15 && !this.bleed && !(this.disease && this.disease.sev > 0.6)) d = (this.sleeping ? 3 : 1.5) * hours;
     if (d < 0 && this.health >= 50 && this.health + d < 50) Game.alert(`${this.first} je ve vážném stavu – umírá ${cause}!`, 'warn', this.tx, this.ty);
     this.health = U.clamp(this.health + d, 0, 100);
     if (this.health <= 0) Game.killColonist(this, cause || 'vyčerpáním');
@@ -270,6 +283,11 @@ class Colonist {
     if (this.energy < 25 || (night && this.energy < 92)) {
       this.startJob({ type: 'sleep', bed: Jobs.findBed(this) });
       return;
+    }
+    // vážně nemocný si lehne do postele
+    if (this.disease && this.disease.sev > 0.35) {
+      const bed = Jobs.findBed(this);
+      if (bed >= 0) { this.startJob({ type: 'sleep', bed, rest: true }); return; }
     }
     // výbava: teplé oblečení a kuše, pokud jsou ve skladu
     const gear = !this.coat && Jobs.anyItem('coat') ? 'coat' : !this.bow && Jobs.anyItem('bow') ? 'bow' : null;

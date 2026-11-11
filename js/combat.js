@@ -93,6 +93,7 @@ class Raider {
       if (this.cd <= 0) {
         this.cd = 42;
         tc.health -= 9 * Combat.diff().dmg;
+        if (U.chance(0.5)) Medicine.wound(tc);
         if (tc.sleeping && tc.job) tc.endJob();
         Sound.play('hit', this.x, this.y);
         if (tc.health <= 0) Game.killColonist(tc, 'v boji s nájezdníky');

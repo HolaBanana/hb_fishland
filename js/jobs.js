@@ -161,7 +161,7 @@ const Jobs = (() => {
       const out = [];
       for (const i of World.ripeSet) out.push({ type: 'harvest', i, key: 'o' + i });
       if (TimeSys.daylight() > 0.2) {
-        for (const i of World.emptyFarm) if (World.canSow(i)) out.push({ type: 'sow', i, key: 'o' + i });
+        for (const i of World.emptyFarm) if (World.canSow(i) && Crops.canSowNow(World.cropType(i), i)) out.push({ type: 'sow', i, key: 'o' + i });
       }
       for (const i of World.des.harvest) {
         const o = World.obj[i];
@@ -171,6 +171,11 @@ const Jobs = (() => {
       for (const a of Animals.list) {
         if (a.type === 'sheep' && a.prod >= 1 && !a.hunt) out.push({ type: 'shear', a: a.id, i: World.idx(a.tx, a.ty), key: 'a' + a.id });
       }
+      return out;
+    },
+    doctor(c) {
+      const out = [];
+      for (const p of Game.colonists) if (Medicine.needsCare(p)) out.push({ type: 'tend', p: p.id, i: World.idx(p.tx, p.ty), key: 'm' + p.id });
       return out;
     },
     hunt() {
@@ -500,6 +505,49 @@ const Jobs = (() => {
       }
     },
 
+    /** Ošetření pacienta: vzít léky nebo byliny (pokud jsou), dojít k němu a ošetřit. */
+    tend(c, j) {
+      const p = Game.colonistById(j.p);
+      if (!p || !Medicine.needsCare(p)) return DONE;
+      j.t = (j.t || 0) + 1;
+      if (j.t > 3000) return FAIL;
+      if (j.stage === 0) {
+        j.med = null;
+        const kind = anyItem('medicine') ? 'medicine' : anyItem('herbs') ? 'herbs' : null;
+        const src = kind ? nearestItem([kind], c) : -1;
+        if (src >= 0) { Game.reserveItem(src, 1, c); j.src = src; j.med = kind; j.stage = 1; }
+        else j.stage = 2;
+      }
+      if (j.stage === 1) {
+        c.activity = 'Jde pro léky';
+        const r = walk(c, j, ix(j.src), iy(j.src), 0, 'i' + j.src);
+        if (r === 'fail') { j.stage = 2; j.med = null; }
+        else if (r === 'moving') return;
+        else { if (!c.pickup(j.src, 1, j.med)) j.med = null; j.stage = 2; }
+      }
+      if (j.stage === 2) {
+        c.activity = 'Jde ošetřit: ' + p.first;
+        if (Math.hypot(p.x - c.x, p.y - c.y) > 1.5) {
+          if (!c.path || j.t % 40 === 0) { if (!c.pathTo(p.tx, p.ty, 1)) return FAIL; }
+          c.followPath();
+          return;
+        }
+        c.path = null;
+        j.stage = 3;
+      }
+      if (Math.hypot(p.x - c.x, p.y - c.y) > 2) { j.stage = 2; return; }
+      c.activity = 'Ošetřuje: ' + p.first;
+      c.face(p.tx, p.ty);
+      j.progress += c.work('medicine');
+      c.workFrac = j.progress / 90;
+      if (j.progress >= 90) {
+        const q = c.carry && c.carry.type === 'medicine' ? 2 : c.carry && c.carry.type === 'herbs' ? 1.6 : 1.25;
+        if (c.carry && (c.carry.type === 'medicine' || c.carry.type === 'herbs')) { c.carry.n--; if (c.carry.n <= 0) c.carry = null; }
+        Medicine.tend(c, p, q);
+        return DONE;
+      }
+    },
+
     /** Stříhání ovce. */
     shear(c, j) {
       const a = Animals.byId(j.a);
@@ -674,11 +722,11 @@ const Jobs = (() => {
         if (r === 'moving') return;
         j.stage = 1;
       }
-      c.activity = 'Sází brambory';
+      c.activity = 'Sází: ' + Crops.def(World.cropType(i)).name.toLowerCase();
       j.progress += c.work('grow');
       c.workFrac = j.progress / 28;
       if (j.progress >= 28) {
-        World.setCrop(i, 0);
+        World.setCrop(i, 0, World.cropType(i));
         return DONE;
       }
     },
@@ -698,9 +746,9 @@ const Jobs = (() => {
       c.workFrac = j.progress / 32;
       if (j.progress >= 32) {
         World.removeCrop(i);
-        const yieldN = Math.round(6 * (0.85 + c.skills.grow.lvl * 0.04));
-        World.dropItem(x, y, 'food', yieldN);
-        Game.stats.harvested += yieldN;
+        const y2 = Crops.yieldOf(cr, c.skills.grow.lvl);
+        World.dropItem(x, y, y2.type, y2.n);
+        Game.stats.harvested += y2.n;
         return DONE;
       }
     },
@@ -802,6 +850,7 @@ const Jobs = (() => {
         if (r === 'fail') return FAIL;
         if (r === 'moving') return;
         j.food = it.type;
+        j.fresh = World.freshness(j.i);
         if (!c.pickup(j.i, 1, it.type)) return FAIL;
         j.seat = findSeat(c);
         if (j.seat >= 0 && !Game.reserve('s' + j.seat, c)) j.seat = -1;
@@ -821,6 +870,7 @@ const Jobs = (() => {
       c.eating = true;
       if (j.progress >= 50) {
         c.carry = null;
+        Medicine.ate(c, j.food, j.fresh === undefined ? 1 : j.fresh);
         if (j.food === 'meal') {
           c.hunger = Math.min(100, c.hunger + 60);
           c.addThought('meal', 'Teplé jídlo', 6, 10);
@@ -885,7 +935,9 @@ const Jobs = (() => {
       c.activity = j.bed >= 0 ? 'Spí v posteli' : (j.collapse ? 'Zhroutil/a se vyčerpáním' : 'Spí na zemi');
       const rate = (j.bed >= 0 ? 100 / 7 : 100 / 9.5) * Config.HOURS_PER_TICK;
       c.energy = Math.min(100, c.energy + rate);
-      const wake = (!TimeSys.isNight() && c.energy >= 97) || c.hunger < 12 || (c.energy >= 100 && TimeSys.hour >= 5 && TimeSys.hour < 22);
+      const wake = j.rest ? (!c.disease || c.disease.sev < 0.25 || c.hunger < 15)
+        : (!TimeSys.isNight() && c.energy >= 97) || c.hunger < 12 || (c.energy >= 100 && TimeSys.hour >= 5 && TimeSys.hour < 22);
+      if (j.rest) c.activity = 'Leží nemocný/á v posteli';
       if (wake) {
         if (j.bed >= 0) {
           const room = World.roomAt(j.bed);
