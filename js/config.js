@@ -18,7 +18,7 @@ const Config = {
   TREE_GROW_PER_HOUR: 0.004,
   SPEEDS: [0, 1, 2, 3, 4],
   AUTO_FAST_SPEED: 10,     // rychlost, když všichni spí (volitelné)
-  BATCH_RADIUS: 8,
+  BATCH_RADIUS: 8,         // dosah pro hromadné zásobování sousedních plánů
   SEASON_DAYS: 4,          // délka ročního období ve dnech (rok = 16 dní)
   SPOIL_HOURS: { food: 72, meal: 120, meat: 48, egg: 96 },   // trvanlivost potravin venku (herní hodiny)
   CHEST_STACK: 300,        // kapacita truhly
@@ -31,7 +31,7 @@ const Config = {
   BELT_STACK: 8,           // max. kusů na políčku pásu
   POWER_LINK: 7,           // dosah propojení zdrojů a sloupů (políčka)
   POWER_REACH: 5,          // dosah napájení strojů od zdroje / sloupu
-  RESEARCH_RATE: 0.011,    // bodů výzkumu za tick práce při rychlosti 1         // dosah pro hromadné zásobování sousedních plánů
+  RESEARCH_RATE: 0.011,    // bodů výzkumu za tick práce při rychlosti 1
 };
 Config.HOURS_PER_TICK = Config.MIN_PER_TICK / 60;
 
